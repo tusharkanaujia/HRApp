@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: #f8fafc;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+}
+
+.org-tree-container {
+  cursor: grab;
+  user-select: none;
+}
+.org-tree-container:active {
+  cursor: grabbing;
+}
+
+.node-card {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}

@@ -1,0 +1,79 @@
+import { useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { Navigate } from 'react-router-dom';
+import { login } from '../store/authSlice';
+import { useAuth } from '../hooks/useAuth';
+import type { RootState } from '../store';
+
+export default function LoginPage() {
+  const dispatch = useDispatch();
+  const { isLoggedIn } = useAuth();
+  const users = useSelector((s: RootState) => s.auth.users);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  if (isLoggedIn) return <Navigate to="/" replace />;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const match = users.find(u => u.username === username.trim() && u.password === password);
+    if (!match) { setError('Invalid username or password.'); return; }
+    setError('');
+    dispatch(login({ username: username.trim(), password }));
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="inline-flex w-14 h-14 bg-blue-500 rounded-2xl items-center justify-center font-bold text-xl text-white mb-4">
+            ABC
+          </div>
+          <h1 className="text-xl font-bold text-white">HR Manager</h1>
+          <p className="text-slate-400 text-sm mt-1">Ancient Builders Construction Group</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 shadow-2xl space-y-4">
+          <h2 className="text-slate-800 font-semibold text-base">Sign in</h2>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Username</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. obaid.syed"
+              value={username}
+              onChange={e => { setUsername(e.target.value); setError(''); }}
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Password</label>
+            <input
+              type="password"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError(''); }}
+            />
+          </div>
+
+          {error && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+          <button
+            type="submit"
+            className="w-full bg-blue-600 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            Sign in
+          </button>
+
+          <div className="text-xs text-slate-400 text-center space-y-0.5 pt-1 border-t border-slate-100">
+            <p>HR Admin: <code className="bg-slate-100 px-1 rounded">obaid.syed</code> / <code className="bg-slate-100 px-1 rounded">hr@2024</code></p>
+            <p>Viewer: <code className="bg-slate-100 px-1 rounded">viewer</code> / <code className="bg-slate-100 px-1 rounded">viewer</code></p>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
