@@ -1,14 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
-import OrgTreeView from '../components/OrgTreeView';
+import OrgTreeView, { type OrgTreeViewHandle } from '../components/OrgTreeView';
 import OrgByProject from '../components/OrgByProject';
 import StatusBadge from '../components/StatusBadge';
 import AddEmployeeModal from '../components/AddEmployeeModal';
 import { useAuth } from '../hooks/useAuth';
 import type { Employee } from '../types';
-import { Search, ChevronRight, Briefcase, User, GitBranch, FolderOpen, Pencil } from 'lucide-react';
+import { Search, ChevronRight, Briefcase, User, GitBranch, FolderOpen, Pencil, Image as ImageIcon, FileText } from 'lucide-react';
 
 export default function OrgChartPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -16,9 +16,11 @@ export default function OrgChartPage() {
     searchParams.get('view') === 'project' ? 'project' : 'hierarchy',
   );
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
+  const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
   const { canEdit } = useAuth();
   const employees = useSelector((s: RootState) => s.employees.list);
   const projects = useSelector((s: RootState) => s.projects.list);
+  const treeRef = useRef<OrgTreeViewHandle>(null);
 
   const focalId = searchParams.get('emp') || employees[0]?.id || '';
   const initialProjectId = searchParams.get('project') ?? undefined;
@@ -51,6 +53,19 @@ export default function OrgChartPage() {
   const selectedProjects = selected ? projects.filter(p => selected.projectIds.includes(p.id)) : [];
   const directReports = selected ? employees.filter(e => e.managerId === selected.id) : [];
 
+  const handleExport = async (format: 'png' | 'pdf') => {
+    if (!treeRef.current || !focal) return;
+    const slug = focal.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const filename = `org-chart-${slug || 'export'}.${format}`;
+    setExporting(format);
+    try {
+      if (format === 'png') await treeRef.current.exportToPng(filename);
+      else await treeRef.current.exportToPdf(filename);
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* View mode toggle */}
@@ -71,6 +86,26 @@ export default function OrgChartPage() {
         >
           <FolderOpen size={14} /> By Project
         </button>
+        {viewMode === 'hierarchy' && focal && (
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => handleExport('png')}
+              disabled={exporting !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              title="Download org chart as PNG image"
+            >
+              <ImageIcon size={14} /> {exporting === 'png' ? 'Generating…' : 'PNG'}
+            </button>
+            <button
+              onClick={() => handleExport('pdf')}
+              disabled={exporting !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              title="Download org chart as PDF"
+            >
+              <FileText size={14} /> {exporting === 'pdf' ? 'Generating…' : 'PDF'}
+            </button>
+          </div>
+        )}
       </div>
 
       {viewMode === 'project' && (
@@ -247,6 +282,7 @@ export default function OrgChartPage() {
         <div className="flex-1 min-h-0">
           {focalId && employees.length > 0 ? (
             <OrgTreeView
+              ref={treeRef}
               focalId={focalId}
               employees={employees}
               onSelectEmployee={id => {

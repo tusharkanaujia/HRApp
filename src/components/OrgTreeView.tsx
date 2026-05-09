@@ -1,9 +1,16 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import type { Employee } from '../types';
 import { computeLayout, NODE_W, NODE_H } from '../utils/treeLayout';
 import { statusDotColor } from './StatusBadge';
+
+export interface OrgTreeViewHandle {
+  exportToPng: (filename: string) => Promise<void>;
+  exportToPdf: (filename: string) => Promise<void>;
+}
 
 interface Props {
   focalId: string;
@@ -29,9 +36,10 @@ const DIV_COLORS: Record<string, string> = {
   GENERAL: '#64748b',
 };
 
-export default function OrgTreeView({ focalId, employees, onSelectEmployee }: Props) {
+function OrgTreeView({ focalId, employees, onSelectEmployee }: Props, ref: React.Ref<OrgTreeViewHandle>) {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
+  const panZoomRef = useRef<HTMLDivElement>(null);
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const drag = useRef<{ startX: number; startY: number; tx: number; ty: number } | null>(null);
   // Start with only the focal node expanded (shows its direct reports)
@@ -95,6 +103,59 @@ export default function OrgTreeView({ focalId, employees, onSelectEmployee }: Pr
     else navigate(`/org-chart?emp=${id}`);
   };
 
+  // Capture the full pan-zoom content to a canvas via an offscreen clone (doesn't disturb the live view).
+  const captureCanvas = useCallback(async (): Promise<HTMLCanvasElement | null> => {
+    const panZoom = panZoomRef.current;
+    if (!panZoom || nodes.length === 0) return null;
+
+    const clone = panZoom.cloneNode(true) as HTMLDivElement;
+    clone.style.transform = `translate(${-minX}px, ${-minY}px)`;
+
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.left = '-99999px';
+    wrapper.style.top = '0';
+    wrapper.style.width = `${svgW}px`;
+    wrapper.style.height = `${svgH}px`;
+    wrapper.style.backgroundColor = '#f8fafc';
+    wrapper.style.overflow = 'hidden';
+    wrapper.appendChild(clone);
+    document.body.appendChild(wrapper);
+
+    try {
+      return await html2canvas(wrapper, {
+        backgroundColor: '#f8fafc',
+        scale: 2,
+        width: svgW,
+        height: svgH,
+        useCORS: true,
+        logging: false,
+      });
+    } finally {
+      document.body.removeChild(wrapper);
+    }
+  }, [minX, minY, svgW, svgH, nodes.length]);
+
+  useImperativeHandle(ref, () => ({
+    async exportToPng(filename: string) {
+      const canvas = await captureCanvas();
+      if (!canvas) return;
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL('image/png');
+      link.download = filename;
+      link.click();
+    },
+    async exportToPdf(filename: string) {
+      const canvas = await captureCanvas();
+      if (!canvas) return;
+      const imgData = canvas.toDataURL('image/png');
+      const orientation = canvas.width >= canvas.height ? 'landscape' : 'portrait';
+      const pdf = new jsPDF({ orientation, unit: 'pt', format: [canvas.width, canvas.height] });
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.save(filename);
+    },
+  }), [captureCanvas]);
+
   if (nodes.length === 0) {
     return <div className="flex items-center justify-center h-full text-slate-400">No hierarchy data</div>;
   }
@@ -121,6 +182,7 @@ export default function OrgTreeView({ focalId, employees, onSelectEmployee }: Pr
 
       {/* Pan/zoom container */}
       <div
+        ref={panZoomRef}
         style={{
           position: 'absolute',
           transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
@@ -280,3 +342,5 @@ export default function OrgTreeView({ focalId, employees, onSelectEmployee }: Pr
     </div>
   );
 }
+
+export default forwardRef(OrgTreeView);

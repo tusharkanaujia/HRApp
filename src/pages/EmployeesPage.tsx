@@ -9,7 +9,8 @@ import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
 import { addActivity } from '../store/activitySlice';
 import { makeActivity } from '../utils/activityHelpers';
-import { Plus, Search, Trash2, GitBranch, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
+import { Plus, Search, Trash2, GitBranch, ChevronLeft, ChevronRight, Pencil, FileDown } from 'lucide-react';
+import { exportEmployeesToExcel } from '../utils/exportExcel';
 
 const PAGE_SIZE = 50;
 
@@ -86,6 +87,12 @@ export default function EmployeesPage() {
     setConfirmDelete(null);
   };
 
+  const handleExport = () => {
+    const managerNameById = new Map(employees.map(e => [e.id, e.name]));
+    const stamp = new Date().toISOString().slice(0, 10);
+    exportEmployeesToExcel(filtered, managerNameById, `employees-${stamp}.xlsx`);
+  };
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
@@ -93,14 +100,24 @@ export default function EmployeesPage() {
           <h1 className="text-2xl font-bold text-slate-800">Employees</h1>
           <p className="text-slate-400 text-sm mt-0.5">{filtered.length} of {employees.length} employees</p>
         </div>
-        {canEdit && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700"
+            onClick={handleExport}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Download filtered employees as Excel"
           >
-            <Plus size={16} /> Add Employee
+            <FileDown size={16} /> Export ({filtered.length})
           </button>
-        )}
+          {canEdit && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700"
+            >
+              <Plus size={16} /> Add Employee
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
