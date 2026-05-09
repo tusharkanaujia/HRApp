@@ -1,17 +1,8 @@
 // One-off script to add a user to an existing WeHive tenant.
-// Run from the hrapp/ directory: node scripts/addUser.js
+// Edit TENANT_ID + USER below, then: node scripts/addUser.js
 
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyCHRF1pkAPX1FjZCD8q5lk7OR1ZLDrZJwI",
-  authDomain: "hrapp-1febc.firebaseapp.com",
-  projectId: "hrapp-1febc",
-  storageBucket: "hrapp-1febc.firebasestorage.app",
-  messagingSenderId: "626901174765",
-  appId: "1:626901174765:web:3851b736eff63b4b863fe4",
-};
+import { doc, setDoc, getDoc } from "firebase/firestore";
+import { db } from "./lib/firebase.js";
 
 // ── User to add ──────────────────────────────────────────────────────────────
 const TENANT_ID = "abc";
@@ -23,9 +14,6 @@ const USER = {
   role: "ADMIN",
 };
 // ─────────────────────────────────────────────────────────────────────────────
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
 
 async function run() {
   const tenantSnap = await getDoc(doc(db, "tenants", TENANT_ID));
