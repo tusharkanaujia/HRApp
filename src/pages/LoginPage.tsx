@@ -17,6 +17,8 @@ export default function LoginPage() {
   const { tenant } = useTenant();
   const initials = tenant?.name?.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? 'WH';
   const color = tenant?.primaryColor ?? '#2563eb';
+  const logoSrc = tenant?.logoUrl?.trim() || (tenant?.id ? `/tenants/${tenant.id}/logo.png` : null);
+  const [logoFailed, setLogoFailed] = useState(false);
 
   if (isLoggedIn) return <Navigate to="/" replace />;
 
@@ -32,12 +34,21 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div
-            className="inline-flex w-14 h-14 rounded-2xl items-center justify-center font-bold text-xl text-white mb-4"
-            style={{ backgroundColor: color }}
-          >
-            {initials}
-          </div>
+          {logoSrc && !logoFailed ? (
+            <img
+              src={logoSrc}
+              alt={tenant?.name ?? 'WeHive'}
+              onError={() => setLogoFailed(true)}
+              className="inline-block w-14 h-14 rounded-2xl object-contain bg-white mb-4 p-1"
+            />
+          ) : (
+            <div
+              className="inline-flex w-14 h-14 rounded-2xl items-center justify-center font-bold text-xl text-white mb-4"
+              style={{ backgroundColor: color }}
+            >
+              {initials}
+            </div>
+          )}
           <h1 className="text-xl font-bold text-white">WeHive</h1>
           <p className="text-slate-400 text-sm mt-1">{tenant?.name ?? 'HR Management'}</p>
         </div>

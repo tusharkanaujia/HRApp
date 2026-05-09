@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { Users, FolderOpen, GitBranch, LayoutDashboard, LogOut, UserCog, Shield, Eye, Pencil, ClipboardList } from 'lucide-react';
@@ -26,18 +27,29 @@ export default function Sidebar() {
   const { tenant } = useTenant();
   const initials = tenant?.name?.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? 'WH';
   const color = tenant?.primaryColor ?? '#2563eb';
+  const logoSrc = tenant?.logoUrl?.trim() || (tenant?.id ? `/tenants/${tenant.id}/logo.png` : null);
+  const [logoFailed, setLogoFailed] = useState(false);
 
   return (
     <aside className="w-64 bg-slate-900 text-white flex flex-col flex-shrink-0 h-screen sticky top-0">
       {/* Logo */}
       <div className="px-6 py-5 border-b border-slate-700">
         <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm text-white"
-            style={{ backgroundColor: color }}
-          >
-            {initials}
-          </div>
+          {logoSrc && !logoFailed ? (
+            <img
+              src={logoSrc}
+              alt={tenant?.name ?? 'WeHive'}
+              onError={() => setLogoFailed(true)}
+              className="w-9 h-9 rounded-lg object-contain bg-white p-0.5"
+            />
+          ) : (
+            <div
+              className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm text-white"
+              style={{ backgroundColor: color }}
+            >
+              {initials}
+            </div>
+          )}
           <div>
             <p className="font-semibold text-sm leading-tight">WeHive</p>
             <p className="text-xs text-slate-400 truncate max-w-36">{tenant?.name ?? 'Construction Group'}</p>
