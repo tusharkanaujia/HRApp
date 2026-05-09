@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import type { RootState } from '../store';
 import { deleteProject } from '../store/projectsSlice';
+import { addActivity } from '../store/activitySlice';
+import { makeActivity } from '../utils/activityHelpers';
 import type { Project } from '../types';
 import AddProjectModal from '../components/AddProjectModal';
 import { useAuth } from '../hooks/useAuth';
@@ -22,7 +25,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function ProjectsPage() {
   const dispatch = useDispatch();
-  const { canEdit } = useAuth();
+  const navigate = useNavigate();
+  const { canEdit, currentUser } = useAuth();
   const projects = useSelector((s: RootState) => s.projects.list);
   const employees = useSelector((s: RootState) => s.employees.list);
   const [showModal, setShowModal] = useState(false);
@@ -38,6 +42,13 @@ export default function ProjectsPage() {
   });
 
   const empCount = (projectId: string) => employees.filter(e => e.projectIds.includes(projectId)).length;
+
+  const handleDelete = (id: string) => {
+    const proj = projects.find(p => p.id === id);
+    dispatch(deleteProject(id));
+    if (proj) dispatch(addActivity(makeActivity('DELETE_PROJECT', 'project', id, proj.name, currentUser)));
+    setConfirmDelete(null);
+  };
 
   return (
     <div className="p-8">
@@ -83,7 +94,8 @@ export default function ProjectsPage() {
           return (
             <div
               key={project.id}
-              className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col group hover:shadow-md transition-shadow"
+              onClick={() => navigate(`/org-chart?view=project&project=${project.id}`)}
+              className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col group hover:shadow-md transition-shadow cursor-pointer"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1 min-w-0">
@@ -101,14 +113,14 @@ export default function ProjectsPage() {
                 {canEdit && (
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition ml-2 flex-shrink-0">
                     <button
-                      onClick={() => setEditProject(project)}
+                      onClick={e => { e.stopPropagation(); setEditProject(project); }}
                       className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"
                       title="Edit project"
                     >
                       <Pencil size={14} />
                     </button>
                     <button
-                      onClick={() => setConfirmDelete(project.id)}
+                      onClick={e => { e.stopPropagation(); setConfirmDelete(project.id); }}
                       className="p-1.5 text-slate-300 hover:text-red-400 hover:bg-red-50 rounded-lg"
                       title="Delete project"
                     >
@@ -183,7 +195,7 @@ export default function ProjectsPage() {
             </p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)} className="flex-1 border border-slate-300 rounded-lg py-2 text-sm">Cancel</button>
-              <button onClick={() => { dispatch(deleteProject(confirmDelete)); setConfirmDelete(null); }} className="flex-1 bg-red-500 text-white rounded-lg py-2 text-sm font-medium">Delete</button>
+              <button onClick={() => handleDelete(confirmDelete)} className="flex-1 bg-red-500 text-white rounded-lg py-2 text-sm font-medium">Delete</button>
             </div>
           </div>
         </div>

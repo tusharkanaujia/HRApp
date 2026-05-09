@@ -1,7 +1,8 @@
 import { NavLink } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
-import { Users, FolderOpen, GitBranch, LayoutDashboard, LogOut, UserCog, Shield, Eye, Pencil } from 'lucide-react';
+import { Users, FolderOpen, GitBranch, LayoutDashboard, LogOut, UserCog, Shield, Eye, Pencil, ClipboardList } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useTenant } from '../contexts/TenantContext';
 import { logout } from '../store/authSlice';
 import type { UserRole } from '../types';
 
@@ -10,6 +11,7 @@ const links = [
   { to: '/employees',  label: 'Employees',  Icon: Users },
   { to: '/projects',   label: 'Projects',   Icon: FolderOpen },
   { to: '/org-chart',  label: 'Org Chart',  Icon: GitBranch },
+  { to: '/activity',   label: 'Activity',   Icon: ClipboardList },
 ];
 
 const ROLE_BADGE: Record<UserRole, { label: string; cls: string; Icon: React.ElementType }> = {
@@ -21,18 +23,24 @@ const ROLE_BADGE: Record<UserRole, { label: string; cls: string; Icon: React.Ele
 export default function Sidebar() {
   const dispatch = useDispatch();
   const { currentUser, isAdmin } = useAuth();
+  const { tenant } = useTenant();
+  const initials = tenant?.name?.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? 'WH';
+  const color = tenant?.primaryColor ?? '#2563eb';
 
   return (
     <aside className="w-64 bg-slate-900 text-white flex flex-col flex-shrink-0 h-screen sticky top-0">
       {/* Logo */}
       <div className="px-6 py-5 border-b border-slate-700">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-sm">
-            ABC
+          <div
+            className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm text-white"
+            style={{ backgroundColor: color }}
+          >
+            {initials}
           </div>
           <div>
-            <p className="font-semibold text-sm leading-tight">HR Manager</p>
-            <p className="text-xs text-slate-400">Construction Group</p>
+            <p className="font-semibold text-sm leading-tight">WeHive</p>
+            <p className="text-xs text-slate-400 truncate max-w-36">{tenant?.name ?? 'Construction Group'}</p>
           </div>
         </div>
       </div>

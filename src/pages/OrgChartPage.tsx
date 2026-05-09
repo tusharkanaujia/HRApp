@@ -5,15 +5,23 @@ import type { RootState } from '../store';
 import OrgTreeView from '../components/OrgTreeView';
 import OrgByProject from '../components/OrgByProject';
 import StatusBadge from '../components/StatusBadge';
-import { Search, ChevronRight, Briefcase, User, GitBranch, FolderOpen } from 'lucide-react';
+import AddEmployeeModal from '../components/AddEmployeeModal';
+import { useAuth } from '../hooks/useAuth';
+import type { Employee } from '../types';
+import { Search, ChevronRight, Briefcase, User, GitBranch, FolderOpen, Pencil } from 'lucide-react';
 
 export default function OrgChartPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [viewMode, setViewMode] = useState<'hierarchy' | 'project'>('hierarchy');
+  const [viewMode, setViewMode] = useState<'hierarchy' | 'project'>(
+    searchParams.get('view') === 'project' ? 'project' : 'hierarchy',
+  );
+  const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
+  const { canEdit } = useAuth();
   const employees = useSelector((s: RootState) => s.employees.list);
   const projects = useSelector((s: RootState) => s.projects.list);
 
   const focalId = searchParams.get('emp') || employees[0]?.id || '';
+  const initialProjectId = searchParams.get('project') ?? undefined;
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -67,7 +75,7 @@ export default function OrgChartPage() {
 
       {viewMode === 'project' && (
         <div className="flex-1 min-h-0">
-          <OrgByProject employees={employees} projects={projects} />
+          <OrgByProject employees={employees} projects={projects} initialProjectId={initialProjectId} />
         </div>
       )}
 
@@ -132,13 +140,22 @@ export default function OrgChartPage() {
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div>
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
+                <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                   {selected.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
                 </div>
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-800 text-sm">{selected.name}</p>
                   <p className="text-xs text-slate-400">{selected.empId}</p>
                 </div>
+                {canEdit && (
+                  <button
+                    onClick={() => setEditEmployee(selected)}
+                    className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg flex-shrink-0"
+                    title="Edit employee"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                )}
               </div>
               <StatusBadge status={selected.status} />
             </div>
@@ -247,6 +264,10 @@ export default function OrgChartPage() {
         </div>
       </div>
     </div>
+      )}
+
+      {editEmployee && (
+        <AddEmployeeModal employee={editEmployee} onClose={() => setEditEmployee(null)} />
       )}
     </div>
   );

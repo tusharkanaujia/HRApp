@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { addProject, updateProject } from '../store/projectsSlice';
+import { addActivity } from '../store/activitySlice';
+import { makeActivity, projectChanges } from '../utils/activityHelpers';
+import { useAuth } from '../hooks/useAuth';
 import type { Project, ProjectType, ProjectStatus } from '../types';
 import { X } from 'lucide-react';
 
@@ -11,6 +14,7 @@ interface Props {
 
 export default function AddProjectModal({ onClose, project }: Props) {
   const dispatch = useDispatch();
+  const { currentUser } = useAuth();
   const isEdit = !!project;
 
   const [form, setForm] = useState({
@@ -30,11 +34,17 @@ export default function AddProjectModal({ onClose, project }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const proj: Project = {
-      ...form,
-      id: isEdit ? project!.id : `p${Date.now()}`,
-    };
-    dispatch(isEdit ? updateProject(proj) : addProject(proj));
+    const proj: Project = { ...form, id: isEdit ? project!.id : `p${Date.now()}` };
+
+    if (isEdit && project) {
+      dispatch(updateProject(proj));
+      const changes = projectChanges(project, proj);
+      if (changes.length > 0)
+        dispatch(addActivity(makeActivity('EDIT_PROJECT', 'project', proj.id, proj.name, currentUser, changes.join(' · '))));
+    } else {
+      dispatch(addProject(proj));
+      dispatch(addActivity(makeActivity('ADD_PROJECT', 'project', proj.id, proj.name, currentUser)));
+    }
     onClose();
   };
 

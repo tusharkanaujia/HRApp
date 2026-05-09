@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { setUserRole, addUser, removeUser, changePassword } from '../store/authSlice';
 import type { RootState } from '../store';
-import type { AppUser, UserRole } from '../types';
+import type { UserRole } from '../types';
 import { Plus, Trash2, KeyRound, Shield, Eye, Pencil } from 'lucide-react';
 
 const ROLE_STYLES: Record<UserRole, string> = {
@@ -125,7 +125,6 @@ export default function UsersPage() {
             {users.map(u => {
               const isSelf = u.id === currentUser?.id;
               const isLastAdmin = u.role === 'ADMIN' && adminCount <= 1;
-              const Icon = ROLE_ICONS[u.role];
               return (
                 <tr key={u.id} className={`hover:bg-slate-50 ${isSelf ? 'bg-blue-50/40' : ''}`}>
                   <td className="px-4 py-3">

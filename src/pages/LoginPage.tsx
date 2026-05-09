@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Navigate } from 'react-router-dom';
 import { login } from '../store/authSlice';
 import { useAuth } from '../hooks/useAuth';
+import { useTenant } from '../contexts/TenantContext';
 import type { RootState } from '../store';
 
 export default function LoginPage() {
@@ -12,6 +13,10 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  const { tenant } = useTenant();
+  const initials = tenant?.name?.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? 'WH';
+  const color = tenant?.primaryColor ?? '#2563eb';
 
   if (isLoggedIn) return <Navigate to="/" replace />;
 
@@ -27,11 +32,14 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex w-14 h-14 bg-blue-500 rounded-2xl items-center justify-center font-bold text-xl text-white mb-4">
-            ABC
+          <div
+            className="inline-flex w-14 h-14 rounded-2xl items-center justify-center font-bold text-xl text-white mb-4"
+            style={{ backgroundColor: color }}
+          >
+            {initials}
           </div>
-          <h1 className="text-xl font-bold text-white">HR Manager</h1>
-          <p className="text-slate-400 text-sm mt-1">Ancient Builders Construction Group</p>
+          <h1 className="text-xl font-bold text-white">WeHive</h1>
+          <p className="text-slate-400 text-sm mt-1">{tenant?.name ?? 'HR Management'}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 shadow-2xl space-y-4">

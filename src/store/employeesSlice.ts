@@ -1,20 +1,14 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { Employee } from '../types';
-import { loadExcelEmployees } from '../data/excelDataLoader';
-
-interface EmployeesState {
-  list: Employee[];
-}
-
-const initialState: EmployeesState = {
-  list: loadExcelEmployees(),
-};
 
 const employeesSlice = createSlice({
   name: 'employees',
-  initialState,
+  initialState: { list: [] as Employee[] },
   reducers: {
+    setEmployees(state, action: PayloadAction<Employee[]>) {
+      state.list = action.payload;
+    },
     addEmployee(state, action: PayloadAction<Employee>) {
       state.list.push(action.payload);
     },
@@ -24,7 +18,6 @@ const employeesSlice = createSlice({
     },
     deleteEmployee(state, action: PayloadAction<string>) {
       state.list = state.list.filter(e => e.id !== action.payload);
-      // Reassign direct reports to deleted employee's manager
       state.list.forEach(e => {
         if (e.managerId === action.payload) e.managerId = null;
       });
@@ -32,5 +25,5 @@ const employeesSlice = createSlice({
   },
 });
 
-export const { addEmployee, updateEmployee, deleteEmployee } = employeesSlice.actions;
+export const { setEmployees, addEmployee, updateEmployee, deleteEmployee } = employeesSlice.actions;
 export default employeesSlice.reducer;

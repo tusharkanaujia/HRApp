@@ -22,7 +22,7 @@ export interface Employee {
   company: string;
   designation: string;
   department: string;
-  workingLocation: string;
+  workingLocation?: string;
   division: Division;
   managerId: string | null;
   projectIds: string[];
@@ -46,6 +46,22 @@ export interface Project {
   description?: string;
   startDate?: string;
   endDate?: string;
+}
+
+export type ActivityAction =
+  | 'ADD_EMPLOYEE' | 'EDIT_EMPLOYEE' | 'DELETE_EMPLOYEE' | 'CHANGE_HIERARCHY'
+  | 'ADD_PROJECT'  | 'EDIT_PROJECT'  | 'DELETE_PROJECT';
+
+export interface ActivityEntry {
+  id: string;
+  timestamp: string;       // ISO string
+  userId: string;
+  userName: string;
+  action: ActivityAction;
+  entityType: 'employee' | 'project';
+  entityId: string;
+  entityName: string;
+  details?: string;        // human-readable diff, e.g. "Status: ACTIVE → RESIGNED · Manager: Ali → Zeeshan"
 }
 
 export interface TreeNode {

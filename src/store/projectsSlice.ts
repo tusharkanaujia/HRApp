@@ -1,20 +1,14 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { Project } from '../types';
-import { seedProjects } from '../data/seedData';
-
-interface ProjectsState {
-  list: Project[];
-}
-
-const initialState: ProjectsState = {
-  list: seedProjects,
-};
 
 const projectsSlice = createSlice({
   name: 'projects',
-  initialState,
+  initialState: { list: [] as Project[] },
   reducers: {
+    setProjects(state, action: PayloadAction<Project[]>) {
+      state.list = action.payload;
+    },
     addProject(state, action: PayloadAction<Project>) {
       state.list.push(action.payload);
     },
@@ -28,5 +22,5 @@ const projectsSlice = createSlice({
   },
 });
 
-export const { addProject, updateProject, deleteProject } = projectsSlice.actions;
+export const { setProjects, addProject, updateProject, deleteProject } = projectsSlice.actions;
 export default projectsSlice.reducer;

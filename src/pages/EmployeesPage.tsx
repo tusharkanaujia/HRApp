@@ -7,6 +7,8 @@ import type { Employee } from '../types';
 import AddEmployeeModal from '../components/AddEmployeeModal';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
+import { addActivity } from '../store/activitySlice';
+import { makeActivity } from '../utils/activityHelpers';
 import { Plus, Search, Trash2, GitBranch, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 
 const PAGE_SIZE = 50;
@@ -29,7 +31,7 @@ function companyShort(c: string) {
 export default function EmployeesPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { canEdit } = useAuth();
+  const { canEdit, currentUser } = useAuth();
   const employees = useSelector((s: RootState) => s.employees.list);
   const [showModal, setShowModal] = useState(false);
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
@@ -78,7 +80,9 @@ export default function EmployeesPage() {
   const resetPage = () => setPage(1);
 
   const handleDelete = (id: string) => {
+    const emp = employees.find(e => e.id === id);
     dispatch(deleteEmployee(id));
+    if (emp) dispatch(addActivity(makeActivity('DELETE_EMPLOYEE', 'employee', id, emp.name, currentUser)));
     setConfirmDelete(null);
   };
 

@@ -2,6 +2,9 @@ import { useState, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import { addEmployee, updateEmployee } from '../store/employeesSlice';
+import { addActivity } from '../store/activitySlice';
+import { makeActivity, employeeChanges } from '../utils/activityHelpers';
+import { useAuth } from '../hooks/useAuth';
 import type { Employee, Division, EmployeeStatus, StaffType } from '../types';
 import { X } from 'lucide-react';
 
@@ -12,6 +15,7 @@ interface Props {
 
 export default function AddEmployeeModal({ onClose, employee }: Props) {
   const dispatch = useDispatch();
+  const { currentUser } = useAuth();
   const employees = useSelector((s: RootState) => s.employees.list);
   const projects = useSelector((s: RootState) => s.projects.list);
 
@@ -69,7 +73,22 @@ export default function AddEmployeeModal({ onClose, employee }: Props) {
       id:        isEdit ? employee!.id : `e${Date.now()}`,
       managerId: form.managerId || null,
     };
-    dispatch(isEdit ? updateEmployee(emp) : addEmployee(emp));
+
+    if (isEdit && employee) {
+      dispatch(updateEmployee(emp));
+      const changes = employeeChanges(employee, emp, employees);
+      if (changes.length > 0) {
+        // Use CHANGE_HIERARCHY when ONLY the manager changed
+        const nonManagerChanges = changes.filter(c => !c.startsWith('Manager:'));
+        const action = nonManagerChanges.length === 0 && changes.some(c => c.startsWith('Manager:'))
+          ? 'CHANGE_HIERARCHY' as const
+          : 'EDIT_EMPLOYEE' as const;
+        dispatch(addActivity(makeActivity(action, 'employee', emp.id, emp.name, currentUser, changes.join(' · '))));
+      }
+    } else {
+      dispatch(addEmployee(emp));
+      dispatch(addActivity(makeActivity('ADD_EMPLOYEE', 'employee', emp.id, emp.name, currentUser)));
+    }
     onClose();
   };
 
