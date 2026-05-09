@@ -108,17 +108,53 @@ function OrgTreeView({ focalId, employees, onSelectEmployee }: Props, ref: React
     const panZoom = panZoomRef.current;
     if (!panZoom || nodes.length === 0) return null;
 
+    // Widen node cards in the export so long names/designations have room to breathe.
+    const NODE_SCALE = 1.4;
+    const PAD = 100;
+
     const clone = panZoom.cloneNode(true) as HTMLDivElement;
-    clone.style.transform = `translate(${-minX}px, ${-minY}px)`;
+    clone.style.transform = `translate(${-minX + PAD}px, ${-minY + PAD}px)`;
+
+    // Disable text truncation so full names are visible.
+    clone.querySelectorAll<HTMLElement>('.truncate').forEach((el) => {
+      el.style.textOverflow = 'clip';
+      el.style.overflow = 'visible';
+      el.style.whiteSpace = 'normal';
+      el.style.wordBreak = 'break-word';
+    });
+
+    // Widen each node card so wrapped text has room. The node cards are absolutely positioned
+    // children of the pan-zoom div with explicit pixel widths/heights set inline.
+    Array.from(clone.children).forEach((child) => {
+      const el = child as HTMLElement;
+      const w = parseFloat(el.style.width);
+      const h = parseFloat(el.style.height);
+      if (Number.isFinite(w) && w > 50 && w < 400) {
+        el.style.width = `${w * NODE_SCALE}px`;
+        el.style.height = `${h * NODE_SCALE}px`;
+        el.style.left = `${parseFloat(el.style.left) - (w * (NODE_SCALE - 1)) / 2}px`;
+        el.style.top = `${parseFloat(el.style.top) - (h * (NODE_SCALE - 1)) / 2}px`;
+      }
+    });
+
+    // Bump small text sizes for readability in print/zoom-out.
+    clone.querySelectorAll<HTMLElement>('p, span').forEach((el) => {
+      const cs = window.getComputedStyle(el);
+      const fs = parseFloat(cs.fontSize);
+      if (fs > 0 && fs < 14) el.style.fontSize = `${Math.round(fs * 1.3)}px`;
+    });
+
+    const captureW = svgW + PAD * 2;
+    const captureH = svgH + PAD * 2;
 
     const wrapper = document.createElement('div');
     wrapper.style.position = 'fixed';
     wrapper.style.left = '-99999px';
     wrapper.style.top = '0';
-    wrapper.style.width = `${svgW}px`;
-    wrapper.style.height = `${svgH}px`;
+    wrapper.style.width = `${captureW}px`;
+    wrapper.style.height = `${captureH}px`;
     wrapper.style.backgroundColor = '#f8fafc';
-    wrapper.style.overflow = 'hidden';
+    wrapper.style.overflow = 'visible';
     wrapper.appendChild(clone);
     document.body.appendChild(wrapper);
 
@@ -126,8 +162,8 @@ function OrgTreeView({ focalId, employees, onSelectEmployee }: Props, ref: React
       return await html2canvas(wrapper, {
         backgroundColor: '#f8fafc',
         scale: 2,
-        width: svgW,
-        height: svgH,
+        width: captureW,
+        height: captureH,
         useCORS: true,
         logging: false,
       });
@@ -148,10 +184,11 @@ function OrgTreeView({ focalId, employees, onSelectEmployee }: Props, ref: React
     async exportToPdf(filename: string) {
       const canvas = await captureCanvas();
       if (!canvas) return;
-      const imgData = canvas.toDataURL('image/png');
+      // JPEG is much smaller than PNG inside a PDF (16 MB → ~1 MB) at minimal quality cost.
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
       const orientation = canvas.width >= canvas.height ? 'landscape' : 'portrait';
       const pdf = new jsPDF({ orientation, unit: 'pt', format: [canvas.width, canvas.height] });
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height, undefined, 'FAST');
       pdf.save(filename);
     },
   }), [captureCanvas]);
