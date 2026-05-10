@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import EmployeesPage from './pages/EmployeesPage';
+import EmployeeDetailPage from './pages/EmployeeDetailPage';
 import ProjectsPage from './pages/ProjectsPage';
 import OrgChartPage from './pages/OrgChartPage';
 import UsersPage from './pages/UsersPage';
@@ -82,7 +83,8 @@ function AppShell() {
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/"           element={<HomePage />} />
-              <Route path="/employees"  element={<EmployeesPage />} />
+              <Route path="/employees"     element={<EmployeesPage />} />
+              <Route path="/employees/:id" element={<EmployeeDetailPage />} />
               <Route path="/projects"   element={<ProjectsPage />} />
               <Route path="/org-chart"  element={<OrgChartPage />} />
               <Route path="/users"      element={<UsersPage />} />

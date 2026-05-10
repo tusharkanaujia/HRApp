@@ -190,15 +190,18 @@ export default function EmployeesPage() {
               <tr key={emp.id} className="hover:bg-slate-50 group">
                 <td className="px-4 py-3 text-slate-400 font-mono text-xs">{emp.empId}</td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => navigate(`/employees/${emp.id}`)}
+                    className="flex items-center gap-2 text-left hover:text-blue-600 group/name"
+                  >
                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold text-xs flex-shrink-0">
                       {emp.name.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-medium text-slate-800">{emp.name}</p>
+                      <p className="font-medium text-slate-800 group-hover/name:text-blue-600">{emp.name}</p>
                       <p className="text-xs text-slate-400">{emp.nationality}</p>
                     </div>
-                  </div>
+                  </button>
                 </td>
                 <td className="px-4 py-3 text-slate-600 max-w-40 truncate">{emp.designation}</td>
                 <td className="px-4 py-3 text-slate-500 max-w-36 truncate">{emp.department}</td>

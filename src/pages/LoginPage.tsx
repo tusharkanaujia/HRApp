@@ -60,7 +60,7 @@ export default function LoginPage() {
             <label className="block text-xs font-medium text-slate-600 mb-1">Username</label>
             <input
               className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g. obaid.syed"
+              placeholder="Enter your username"
               value={username}
               onChange={e => { setUsername(e.target.value); setError(''); }}
               autoFocus
@@ -86,11 +86,6 @@ export default function LoginPage() {
           >
             Sign in
           </button>
-
-          <div className="text-xs text-slate-400 text-center space-y-0.5 pt-1 border-t border-slate-100">
-            <p>HR Admin: <code className="bg-slate-100 px-1 rounded">obaid.syed</code> / <code className="bg-slate-100 px-1 rounded">hr@2024</code></p>
-            <p>Viewer: <code className="bg-slate-100 px-1 rounded">viewer</code> / <code className="bg-slate-100 px-1 rounded">viewer</code></p>
-          </div>
         </form>
       </div>
     </div>
