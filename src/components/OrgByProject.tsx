@@ -1,9 +1,13 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Employee, Project } from '../types';
+import { useDispatch, useSelector } from 'react-redux';
+import type { Employee, Project, ProjectLayout } from '../types';
+import type { RootState } from '../store';
+import { saveProjectLayout, clearProjectLayout } from '../store/projectLayoutsSlice';
+import { useAuth } from '../hooks/useAuth';
 import StatusBadge from './StatusBadge';
-import OrgTreeView from './OrgTreeView';
-import { MapPin, Users, ChevronRight, LayoutGrid, GitBranch } from 'lucide-react';
+import OrgTreeView, { type OrgTreeViewHandle, type ExportMeta } from './OrgTreeView';
+import { MapPin, Users, ChevronRight, LayoutGrid, GitBranch, Image as ImageIcon, FileText, RotateCcw, Check } from 'lucide-react';
 
 interface Props {
   employees: Employee[];
@@ -38,6 +42,9 @@ function initials(name: string) {
 
 export default function OrgByProject({ employees, projects, initialProjectId }: Props) {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const { canEdit, currentUser } = useAuth();
+  const savedLayouts = useSelector((s: RootState) => s.projectLayouts.list);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     initialProjectId ?? projects.find(p => p.status === 'ACTIVE')?.id ?? null,
   );
@@ -45,9 +52,75 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
   const [rightMode, setRightMode] = useState<'cards' | 'tree'>('cards');
   // tree focal: null means "use computed root"
   const [treeFocalId, setTreeFocalId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
+  const treeRef = useRef<OrgTreeViewHandle>(null);
+  // Bumped on Reset to force OrgTreeView to remount so the in-memory offsets
+  // are dropped (it seeds state from initialOffsets on mount only).
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
 
-  // Reset tree focal whenever the selected project changes
-  useEffect(() => { setTreeFocalId(null); }, [selectedProjectId]);
+  // ── Persisted layout for the selected project ──────────────────────────────
+  const savedLayout: ProjectLayout | undefined = useMemo(
+    () => savedLayouts.find(l => l.id === selectedProjectId),
+    [savedLayouts, selectedProjectId],
+  );
+  // 'idle' = matches what's in Firestore (or nothing saved yet, nothing dirty)
+  // 'pending' = local edits not yet flushed
+  // 'saving' = write in flight
+  // 'saved' = transient confirmation
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved'>('idle');
+  const saveTimerRef = useRef<number | null>(null);
+  const savedFlashRef = useRef<number | null>(null);
+
+  // Reset tree focal & any pending save whenever the selected project changes
+  useEffect(() => {
+    setTreeFocalId(null);
+    setSaveStatus('idle');
+    if (saveTimerRef.current) { window.clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    if (savedFlashRef.current) { window.clearTimeout(savedFlashRef.current); savedFlashRef.current = null; }
+  }, [selectedProjectId]);
+
+  useEffect(() => () => {
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    if (savedFlashRef.current) window.clearTimeout(savedFlashRef.current);
+  }, []);
+
+  // Debounced persist — fires ~500ms after the user stops interacting.
+  const handleLayoutChange = useCallback((layout: {
+    offsets: Record<string, { dx: number; dy: number }>;
+    expanded: string[];
+    transform: { x: number; y: number; scale: number };
+  }) => {
+    if (!selectedProjectId || !canEdit) return;
+    setSaveStatus('pending');
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      setSaveStatus('saving');
+      dispatch(saveProjectLayout({
+        id: selectedProjectId,
+        offsets: layout.offsets,
+        expanded: layout.expanded,
+        transform: layout.transform,
+        updatedAt: new Date().toISOString(),
+        updatedByName: currentUser?.name,
+      }));
+      // Firestore write is fire-and-forget in the middleware; flash 'Saved'
+      // after a short delay so the user sees confirmation.
+      window.setTimeout(() => {
+        setSaveStatus('saved');
+        if (savedFlashRef.current) window.clearTimeout(savedFlashRef.current);
+        savedFlashRef.current = window.setTimeout(() => setSaveStatus('idle'), 1500);
+      }, 250);
+    }, 500);
+  }, [selectedProjectId, canEdit, dispatch, currentUser?.name]);
+
+  const handleResetLayout = useCallback(() => {
+    if (!selectedProjectId || !canEdit) return;
+    if (saveTimerRef.current) { window.clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    dispatch(clearProjectLayout(selectedProjectId));
+    setSaveStatus('idle');
+    // Force the tree to remount so any in-memory offsets are dropped.
+    setLayoutEpoch(e => e + 1);
+  }, [selectedProjectId, canEdit, dispatch]);
 
   // ── Project list with direct-assign counts ──────────────────────────────────
   const projectsWithCount = useMemo(() =>
@@ -130,6 +203,45 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
   }, [selectedProjectId, projectEmployees, employees]);
 
   const activeFocalId = treeFocalId ?? projectTree.rootId;
+
+  const handleExport = async (format: 'png' | 'pdf') => {
+    if (!treeRef.current || !selectedProject) return;
+    const slug = (selectedProject.code || selectedProject.name)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const filename = `org-${slug || 'project'}.${format}`;
+
+    // Top-2 companies represented in this project's team, ranked by headcount
+    const companyCounts = new Map<string, number>();
+    for (const e of projectTree.teamEmployees) {
+      if (!e.company) continue;
+      companyCounts.set(e.company, (companyCounts.get(e.company) ?? 0) + 1);
+    }
+    const topCompanies = [...companyCounts.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+    const companyName = topCompanies[0] ?? 'Organization';
+    const companyTagline = topCompanies.length > 1
+      ? `with ${topCompanies.slice(1, 3).join(' · ')}`
+      : undefined;
+
+    const meta: ExportMeta = {
+      companyName,
+      companyTagline,
+      subjectTag: selectedProject.type,
+      subjectCode: selectedProject.code,
+      subjectTitle: selectedProject.name,
+      subjectSubtitle: selectedProject.location,
+      staffCount: projectTree.teamEmployees.length,
+    };
+
+    setExporting(format);
+    try {
+      if (format === 'png') await treeRef.current.exportToPng(filename, meta);
+      else await treeRef.current.exportToPdf(filename, meta);
+    } finally {
+      setExporting(null);
+    }
+  };
 
   return (
     <div className="flex h-full">
@@ -234,24 +346,48 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
                     )}
                   </div>
 
-                  {/* Cards / Tree toggle */}
-                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
-                    <button
-                      onClick={() => setRightMode('cards')}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                        rightMode === 'cards' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      <LayoutGrid size={12} /> Cards
-                    </button>
-                    <button
-                      onClick={() => setRightMode('tree')}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                        rightMode === 'tree' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      <GitBranch size={12} /> Tree
-                    </button>
+                  <div className="flex items-center gap-2">
+                    {/* Export buttons (tree mode only) */}
+                    {rightMode === 'tree' && projectTree.teamEmployees.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => handleExport('png')}
+                          disabled={exporting !== null}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+                          title="Download tree as PNG image"
+                        >
+                          <ImageIcon size={12} /> {exporting === 'png' ? 'Generating…' : 'PNG'}
+                        </button>
+                        <button
+                          onClick={() => handleExport('pdf')}
+                          disabled={exporting !== null}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+                          title="Download tree as PDF"
+                        >
+                          <FileText size={12} /> {exporting === 'pdf' ? 'Generating…' : 'PDF'}
+                        </button>
+                      </>
+                    )}
+
+                    {/* Cards / Tree toggle */}
+                    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+                      <button
+                        onClick={() => setRightMode('cards')}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                          rightMode === 'cards' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        <LayoutGrid size={12} /> Cards
+                      </button>
+                      <button
+                        onClick={() => setRightMode('tree')}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                          rightMode === 'tree' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        <GitBranch size={12} /> Tree
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -314,18 +450,51 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
 
             {/* Tree view */}
             {rightMode === 'tree' && (
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 relative">
                 {projectTree.teamEmployees.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-slate-400 text-sm">
                     No employees assigned to this project
                   </div>
                 ) : activeFocalId ? (
-                  <OrgTreeView
-                    key={selectedProjectId}
-                    focalId={activeFocalId}
-                    employees={projectTree.teamEmployees}
-                    onSelectEmployee={id => setTreeFocalId(id)}
-                  />
+                  <>
+                    <OrgTreeView
+                      key={`${selectedProjectId}:${layoutEpoch}`}
+                      ref={treeRef}
+                      focalId={activeFocalId}
+                      employees={projectTree.teamEmployees}
+                      onSelectEmployee={id => setTreeFocalId(id)}
+                      initialOffsets={savedLayout?.offsets}
+                      initialExpanded={savedLayout?.expanded}
+                      initialTransform={savedLayout?.transform}
+                      onLayoutChange={canEdit ? handleLayoutChange : undefined}
+                    />
+                    {/* Layout save indicator + reset (editors only). Pinned
+                        top-left so it doesn't clash with the tree's built-in
+                        controls in the corners. */}
+                    {canEdit && (
+                      <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+                        <div className="bg-white/90 backdrop-blur rounded-md shadow border border-slate-100 px-2 py-1 text-[11px] text-slate-500 flex items-center gap-1.5">
+                          {saveStatus === 'pending' && <span className="text-amber-600">Editing…</span>}
+                          {saveStatus === 'saving' && <span className="text-blue-600">Saving…</span>}
+                          {saveStatus === 'saved' && (
+                            <><Check size={11} className="text-emerald-600" /><span className="text-emerald-700">Saved</span></>
+                          )}
+                          {saveStatus === 'idle' && (
+                            <span>{savedLayout ? 'Layout saved for this project' : 'Drag cards to save a layout'}</span>
+                          )}
+                        </div>
+                        {savedLayout && (
+                          <button
+                            onClick={handleResetLayout}
+                            className="flex items-center gap-1 bg-white/90 backdrop-blur rounded-md shadow border border-slate-100 px-2 py-1 text-[11px] text-slate-600 hover:text-red-600 hover:border-red-200"
+                            title="Discard saved layout for this project"
+                          >
+                            <RotateCcw size={11} /> Reset saved layout
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 ) : null}
               </div>
             )}

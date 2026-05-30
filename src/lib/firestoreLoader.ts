@@ -3,9 +3,10 @@ import { db } from './firebase';
 import type { AppDispatch } from '../store';
 import { setEmployees } from '../store/employeesSlice';
 import { setProjects } from '../store/projectsSlice';
+import { setProjectLayouts } from '../store/projectLayoutsSlice';
 import { setUsers } from '../store/authSlice';
 import { setActivityLog } from '../store/activitySlice';
-import type { Employee, Project, AppUser, ActivityEntry } from '../types';
+import type { Employee, Project, ProjectLayout, AppUser, ActivityEntry } from '../types';
 
 export function subscribeToTenantData(
   tenantId: string,
@@ -30,6 +31,14 @@ export function subscribeToTenantData(
     onSnapshot(base('projects'), snap => {
       dispatch(setProjects(snap.docs.map(d => ({ ...d.data(), id: d.id } as Project))));
       if (!flags.proj) { flags.proj = true; tryReady(); }
+    }),
+  );
+
+  // Project org-chart layouts (per-project pan/zoom + drag offsets).
+  // Not part of the readiness gate — the app is usable without them.
+  unsubs.push(
+    onSnapshot(base('projectLayouts'), snap => {
+      dispatch(setProjectLayouts(snap.docs.map(d => ({ ...d.data(), id: d.id } as ProjectLayout))));
     }),
   );
 

@@ -9,6 +9,15 @@ export function setTenantId(id: string) { currentTenantId = id; }
 const ref = (sub: string, id: string) =>
   doc(db, 'tenants', currentTenantId, sub, id);
 
+// Firestore rejects fields whose value is `undefined`. Strip them before write.
+function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out as Partial<T>;
+}
+
 // Avoid importing RootState here — it would create a circular dependency:
 // firestoreSync → store/index (for RootState) → firestoreSync (for middleware)
 // Instead we cast getState() locally.
@@ -29,7 +38,7 @@ export const firestoreMiddleware: Middleware =
       // ── Employees ─────────────────────────────────────────────────────────
       case 'employees/addEmployee':
       case 'employees/updateEmployee':
-        setDoc(ref('employees', (payload as Employee).id), { ...(payload as object) })
+        setDoc(ref('employees', (payload as Employee).id), stripUndefined(payload as Record<string, unknown>))
           .catch(console.error);
         break;
 
@@ -47,17 +56,32 @@ export const firestoreMiddleware: Middleware =
       // ── Projects ──────────────────────────────────────────────────────────
       case 'projects/addProject':
       case 'projects/updateProject':
-        setDoc(ref('projects', (payload as { id: string }).id), { ...(payload as object) })
+        setDoc(ref('projects', (payload as { id: string }).id), stripUndefined(payload as Record<string, unknown>))
           .catch(console.error);
         break;
 
       case 'projects/deleteProject':
         deleteDoc(ref('projects', payload as string)).catch(console.error);
+        // Cascade — drop the saved chart layout so a future project at the
+        // same id starts clean.
+        deleteDoc(ref('projectLayouts', payload as string)).catch(console.error);
+        break;
+
+      // ── Project chart layouts ─────────────────────────────────────────────
+      case 'projectLayouts/saveProjectLayout':
+        setDoc(
+          ref('projectLayouts', (payload as { id: string }).id),
+          stripUndefined(payload as Record<string, unknown>),
+        ).catch(console.error);
+        break;
+
+      case 'projectLayouts/clearProjectLayout':
+        deleteDoc(ref('projectLayouts', payload as string)).catch(console.error);
         break;
 
       // ── Users ─────────────────────────────────────────────────────────────
       case 'auth/addUser':
-        setDoc(ref('users', (payload as { id: string }).id), { ...(payload as object) })
+        setDoc(ref('users', (payload as { id: string }).id), stripUndefined(payload as Record<string, unknown>))
           .catch(console.error);
         break;
 
@@ -81,9 +105,29 @@ export const firestoreMiddleware: Middleware =
         ).catch(console.error);
         break;
 
+      case 'auth/setUserDisabled':
+        setDoc(
+          ref('users', (payload as { userId: string }).userId),
+          { disabled: (payload as { disabled: boolean }).disabled },
+          { merge: true },
+        ).catch(console.error);
+        break;
+
+      case 'auth/disableUserByEmpId': {
+        // Need to look up user by empId in current state, then write to that doc
+        const empId = (payload as { empId: string }).empId;
+        const disabled = (payload as { disabled: boolean }).disabled;
+        const state = store.getState() as { auth: { users: Array<{ id: string; empId?: string }> } };
+        const user = state.auth.users.find(u => u.empId === empId);
+        if (user) {
+          setDoc(ref('users', user.id), { disabled }, { merge: true }).catch(console.error);
+        }
+        break;
+      }
+
       // ── Activity ──────────────────────────────────────────────────────────
       case 'activity/addActivity':
-        setDoc(ref('activity', (payload as { id: string }).id), { ...(payload as object) })
+        setDoc(ref('activity', (payload as { id: string }).id), stripUndefined(payload as Record<string, unknown>))
           .catch(console.error);
         break;
 

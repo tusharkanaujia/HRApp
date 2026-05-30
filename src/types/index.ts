@@ -70,3 +70,12 @@ export interface TreeNode {
   x: number;
   y: number;
 }
+
+export interface ProjectLayout {
+  id: string;                                          // == projectId
+  offsets: Record<string, { dx: number; dy: number }>; // per-employee manual offset
+  expanded: string[];                                  // expanded employee ids
+  transform?: { x: number; y: number; scale: number }; // pan/zoom
+  updatedAt?: string;                                  // ISO timestamp
+  updatedByName?: string;                              // display name of last editor
+}
