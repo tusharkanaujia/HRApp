@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:abc": "npm run build && firebase deploy --only hosting:abc",
+    "deploy:legacy": "npm run build && firebase deploy --only hosting:legacy"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.11.2",
@@ -32,6 +34,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "playwright": "^1.60.0",
     "postcss": "^8.5.14",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.2",

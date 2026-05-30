@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "hrapp-1febc"
+  },
+  "targets": {
+    "hrapp-1febc": {
+      "hosting": {
+        "abc":    ["tushar-kanaujia-hrapp"],
+        "legacy": ["hrapp-1febc"]
+      }
+    }
   }
 }
