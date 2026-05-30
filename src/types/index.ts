@@ -79,3 +79,13 @@ export interface ProjectLayout {
   updatedAt?: string;                                  // ISO timestamp
   updatedByName?: string;                              // display name of last editor
 }
+
+// Tenant-wide color overrides. Each map holds only the overrides set by an
+// admin; lookups fall back to defaults when a key isn't present.
+export interface AppearanceConfig {
+  divisions?:   Partial<Record<Division, string>>;
+  departments?: Record<string, string>;
+  projects?:    Record<string, string>; // keyed by project id
+  updatedAt?:   string;
+  updatedByName?: string;
+}

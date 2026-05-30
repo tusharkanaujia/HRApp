@@ -79,6 +79,21 @@ export const firestoreMiddleware: Middleware =
         deleteDoc(ref('projectLayouts', payload as string)).catch(console.error);
         break;
 
+      // ── Appearance (tenant-wide color overrides) ──────────────────────────
+      // Single doc at config/appearance — write the full slice state with
+      // merge so partial updates round-trip correctly.
+      case 'appearance/setDivisionColor':
+      case 'appearance/setDepartmentColor':
+      case 'appearance/setProjectColor': {
+        const state = store.getState() as { appearance: Record<string, unknown> };
+        setDoc(
+          doc(db, 'tenants', currentTenantId, 'config', 'appearance'),
+          stripUndefined(state.appearance as Record<string, unknown>),
+          { merge: true },
+        ).catch(console.error);
+        break;
+      }
+
       // ── Users ─────────────────────────────────────────────────────────────
       case 'auth/addUser':
         setDoc(ref('users', (payload as { id: string }).id), stripUndefined(payload as Record<string, unknown>))

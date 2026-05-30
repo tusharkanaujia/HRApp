@@ -5,6 +5,7 @@ import type { Employee, Project, ProjectLayout } from '../types';
 import type { RootState } from '../store';
 import { saveProjectLayout, clearProjectLayout } from '../store/projectLayoutsSlice';
 import { useAuth } from '../hooks/useAuth';
+import { useColors } from '../hooks/useColors';
 import StatusBadge from './StatusBadge';
 import OrgTreeView, { type OrgTreeViewHandle, type ExportMeta } from './OrgTreeView';
 import { MapPin, Users, ChevronRight, LayoutGrid, GitBranch, Image as ImageIcon, FileText, RotateCcw, Check } from 'lucide-react';
@@ -22,14 +23,6 @@ const TYPE_COLORS: Record<string, string> = {
   GENERAL: 'bg-slate-100   text-slate-600',
 };
 
-const DIV_COLORS: Record<string, string> = {
-  CIVIL:   '#f59e0b',
-  MEP:     '#8b5cf6',
-  FACTORY: '#10b981',
-  ADMIN:   '#3b82f6',
-  GENERAL: '#64748b',
-};
-
 const COMPANY_COLORS: Record<string, string> = {
   'Ancient Builders Constructions LLC':        '#3b82f6',
   'MBM Gulf Electromechanical LLC':            '#14b8a6',
@@ -44,6 +37,7 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { canEdit, currentUser } = useAuth();
+  const { divisionColor, projectColor } = useColors();
   const savedLayouts = useSelector((s: RootState) => s.projectLayouts.list);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     initialProjectId ?? projects.find(p => p.status === 'ACTIVE')?.id ?? null,
@@ -264,6 +258,7 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
               className={`w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-blue-50 transition-colors flex items-start justify-between gap-2 ${
                 selectedProjectId === p.id ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''
               }`}
+              style={selectedProjectId === p.id ? undefined : { borderLeft: `3px solid ${projectColor(p.id, p.type) ?? '#cbd5e1'}` }}
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
@@ -322,7 +317,7 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
                         <span
                           key={div}
                           className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full text-white font-medium"
-                          style={{ backgroundColor: DIV_COLORS[div] ?? '#64748b' }}
+                          style={{ backgroundColor: divisionColor(div) }}
                         >
                           <Users size={9} /> {div} {cnt}
                         </span>
@@ -429,7 +424,7 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
                                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                     <span
                                       className="text-[9px] px-1.5 py-0.5 rounded font-medium text-white"
-                                      style={{ backgroundColor: DIV_COLORS[emp.division] ?? '#64748b' }}
+                                      style={{ backgroundColor: divisionColor(emp.division) }}
                                     >
                                       {emp.division}
                                     </span>

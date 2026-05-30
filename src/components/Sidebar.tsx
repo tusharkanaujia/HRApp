@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
-import { Users, FolderOpen, GitBranch, LayoutDashboard, LogOut, UserCog, Shield, Eye, Pencil, ClipboardList } from 'lucide-react';
+import { Users, FolderOpen, GitBranch, LayoutDashboard, LogOut, UserCog, Shield, Eye, Pencil, ClipboardList, Palette } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useTenant } from '../contexts/TenantContext';
 import { logout } from '../store/authSlice';
@@ -86,6 +86,20 @@ export default function Sidebar() {
           >
             <UserCog size={18} />
             Users
+          </NavLink>
+        )}
+
+        {isAdmin && (
+          <NavLink
+            to="/appearance"
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                isActive ? 'bg-purple-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`
+            }
+          >
+            <Palette size={18} />
+            Appearance
           </NavLink>
         )}
       </nav>

@@ -14,6 +14,7 @@ import type { Employee } from '../types';
 import { computeLayout, NODE_W, NODE_H, ASSIST_W, ASSIST_H } from '../utils/treeLayout';
 import { statusDotColor } from './StatusBadge';
 import { isTerminationPending, isOnboardingPending, employeeStateTooltip } from '../utils/termination';
+import { useColors } from '../hooks/useColors';
 
 export interface ExportMeta {
   companyName?: string;       // e.g. "Ancient Builders Constructions LLC"
@@ -59,14 +60,6 @@ const COMPANY_COLORS: Record<string, string> = {
   'Noor Al Yemen Air Condition Cont. Co. LLC': '#f97316',
 };
 
-const DIV_COLORS: Record<string, string> = {
-  CIVIL: '#f59e0b',
-  MEP: '#8b5cf6',
-  FACTORY: '#10b981',
-  ADMIN: '#3b82f6',
-  GENERAL: '#64748b',
-};
-
 function OrgTreeView({
   focalId,
   employees,
@@ -77,6 +70,7 @@ function OrgTreeView({
   onLayoutChange,
 }: Props, ref: React.Ref<OrgTreeViewHandle>) {
   const navigate = useNavigate();
+  const { divisionColor, departmentColor } = useColors();
   // Controlled = parent is feeding a layout (either to read, to write, or
   // both). When controlled, we skip the focal-change reset and the auto-
   // center, so viewers see the saved layout even as they navigate within it.
@@ -871,7 +865,17 @@ function OrgTreeView({
                     <p className="text-[9px] text-slate-500 truncate leading-tight">{emp.designation}</p>
                     <div className="flex items-center gap-1 mt-0.5">
                       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor }} />
-                      <span className="text-[9px] text-slate-400 truncate">{emp.department}</span>
+                      {(() => {
+                        const dc = departmentColor(emp.department);
+                        return (
+                          <span
+                            className="text-[9px] truncate"
+                            style={dc ? { color: dc, fontWeight: 600 } : { color: '#94a3b8' }}
+                          >
+                            {emp.department}
+                          </span>
+                        );
+                      })()}
                     </div>
                     {emp.workingLocation && (
                       <p className="text-[9px] text-slate-400 truncate leading-tight mt-0.5 italic">{emp.workingLocation}</p>
@@ -883,7 +887,7 @@ function OrgTreeView({
                 <div className="flex items-center justify-between mt-1">
                   <span
                     className="text-[9px] px-1.5 py-0.5 rounded font-medium text-white"
-                    style={{ backgroundColor: DIV_COLORS[emp.division] ?? '#64748b' }}
+                    style={{ backgroundColor: divisionColor(emp.division) }}
                   >
                     {emp.division}
                   </span>
@@ -938,9 +942,9 @@ function OrgTreeView({
       {/* Legend */}
       <div className="absolute bottom-4 left-4 bg-white rounded-xl shadow border border-slate-100 p-3 z-20 text-xs space-y-1">
         <p className="font-semibold text-slate-600 mb-1.5">Division</p>
-        {Object.entries(DIV_COLORS).map(([div, color]) => (
+        {(['CIVIL','MEP','FACTORY','ADMIN','GENERAL'] as const).map(div => (
           <div key={div} className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded" style={{ backgroundColor: color }} />
+            <span className="w-2.5 h-2.5 rounded" style={{ backgroundColor: divisionColor(div) }} />
             <span className="text-slate-500">{div}</span>
           </div>
         ))}

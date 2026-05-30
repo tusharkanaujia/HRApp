@@ -1,12 +1,13 @@
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { db } from './firebase';
 import type { AppDispatch } from '../store';
 import { setEmployees } from '../store/employeesSlice';
 import { setProjects } from '../store/projectsSlice';
 import { setProjectLayouts } from '../store/projectLayoutsSlice';
+import { setAppearance } from '../store/appearanceSlice';
 import { setUsers } from '../store/authSlice';
 import { setActivityLog } from '../store/activitySlice';
-import type { Employee, Project, ProjectLayout, AppUser, ActivityEntry } from '../types';
+import type { Employee, Project, ProjectLayout, AppearanceConfig, AppUser, ActivityEntry } from '../types';
 
 export function subscribeToTenantData(
   tenantId: string,
@@ -39,6 +40,13 @@ export function subscribeToTenantData(
   unsubs.push(
     onSnapshot(base('projectLayouts'), snap => {
       dispatch(setProjectLayouts(snap.docs.map(d => ({ ...d.data(), id: d.id } as ProjectLayout))));
+    }),
+  );
+
+  // Tenant-wide color overrides (single doc). No readiness gate.
+  unsubs.push(
+    onSnapshot(doc(db, 'tenants', tenantId, 'config', 'appearance'), snap => {
+      dispatch(setAppearance((snap.data() ?? {}) as AppearanceConfig));
     }),
   );
 

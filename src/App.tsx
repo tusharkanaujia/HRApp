@@ -10,6 +10,7 @@ import EmployeeDetailPage from './pages/EmployeeDetailPage';
 import ProjectsPage from './pages/ProjectsPage';
 import OrgChartPage from './pages/OrgChartPage';
 import UsersPage from './pages/UsersPage';
+import AppearancePage from './pages/AppearancePage';
 import ActivityPage from './pages/ActivityPage';
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 import { setTenantId } from './lib/firestoreSync';
@@ -88,6 +89,7 @@ function AppShell() {
               <Route path="/projects"   element={<ProjectsPage />} />
               <Route path="/org-chart"  element={<OrgChartPage />} />
               <Route path="/users"      element={<UsersPage />} />
+              <Route path="/appearance" element={<AppearancePage />} />
               <Route path="/activity"   element={<ActivityPage />} />
             </Route>
           </Route>
