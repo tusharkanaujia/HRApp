@@ -2,18 +2,23 @@ import { useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
-import OrgTreeView, { type OrgTreeViewHandle } from '../components/OrgTreeView';
+import OrgTreeView, { type OrgTreeViewHandle, type ExportMeta } from '../components/OrgTreeView';
 import OrgByProject from '../components/OrgByProject';
+import OrgByDepartment from '../components/OrgByDepartment';
+import CorporateOrgChart, { type CorporateOrgChartHandle } from '../components/CorporateOrgChart';
 import StatusBadge from '../components/StatusBadge';
 import AddEmployeeModal from '../components/AddEmployeeModal';
 import { useAuth } from '../hooks/useAuth';
 import type { Employee } from '../types';
-import { Search, ChevronRight, Briefcase, User, GitBranch, FolderOpen, Pencil, Image as ImageIcon, FileText } from 'lucide-react';
+import { Search, ChevronRight, Briefcase, User, GitBranch, FolderOpen, Building2, Building, Pencil, Image as ImageIcon, FileText } from 'lucide-react';
 
 export default function OrgChartPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [viewMode, setViewMode] = useState<'hierarchy' | 'project'>(
-    searchParams.get('view') === 'project' ? 'project' : 'hierarchy',
+  const [viewMode, setViewMode] = useState<'hierarchy' | 'project' | 'department' | 'corporate'>(
+    searchParams.get('view') === 'project' ? 'project'
+    : searchParams.get('view') === 'department' ? 'department'
+    : searchParams.get('view') === 'corporate' ? 'corporate'
+    : 'hierarchy',
   );
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [exporting, setExporting] = useState<'png' | 'pdf' | null>(null);
@@ -21,6 +26,7 @@ export default function OrgChartPage() {
   const employees = useSelector((s: RootState) => s.employees.list);
   const projects = useSelector((s: RootState) => s.projects.list);
   const treeRef = useRef<OrgTreeViewHandle>(null);
+  const corpRef = useRef<CorporateOrgChartHandle>(null);
 
   const focalId = searchParams.get('emp') || employees[0]?.id || '';
   const initialProjectId = searchParams.get('project') ?? undefined;
@@ -57,10 +63,68 @@ export default function OrgChartPage() {
     if (!treeRef.current || !focal) return;
     const slug = focal.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const filename = `org-chart-${slug || 'export'}.${format}`;
+
+    // Count direct + indirect reports under focal
+    const byMgr = new Map<string, string[]>();
+    for (const e of employees) {
+      if (!e.managerId) continue;
+      const list = byMgr.get(e.managerId);
+      if (list) list.push(e.id); else byMgr.set(e.managerId, [e.id]);
+    }
+    let descendants = 0;
+    const stack: string[] = [focal.id];
+    const seen = new Set<string>();
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const kids = byMgr.get(id) ?? [];
+      descendants += kids.length;
+      stack.push(...kids);
+    }
+
+    // Dominant company in focal's subtree (incl. focal)
+    const subtreeEmps = employees.filter(e => seen.has(e.id));
+    const companyCounts = new Map<string, number>();
+    for (const e of subtreeEmps) {
+      if (!e.company) continue;
+      companyCounts.set(e.company, (companyCounts.get(e.company) ?? 0) + 1);
+    }
+    const topCompanies = [...companyCounts.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+    const companyName = topCompanies[0] ?? 'Organization';
+    const companyTagline = topCompanies.length > 1
+      ? `with ${topCompanies.slice(1, 3).join(' · ')}`
+      : undefined;
+
+    const subtitleParts = [focal.designation, focal.department].filter(Boolean);
+
+    const meta: ExportMeta = {
+      companyName,
+      companyTagline,
+      subjectTag: focal.division,
+      subjectCode: focal.empId ? `#${focal.empId}` : undefined,
+      subjectTitle: focal.name,
+      subjectSubtitle: subtitleParts.join(' · ') || undefined,
+      staffCount: descendants,
+      staffLabel: 'direct + indirect reports',
+    };
+
     setExporting(format);
     try {
-      if (format === 'png') await treeRef.current.exportToPng(filename);
-      else await treeRef.current.exportToPdf(filename);
+      if (format === 'png') await treeRef.current.exportToPng(filename, meta);
+      else await treeRef.current.exportToPdf(filename, meta);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleCorporateExport = async (format: 'png' | 'pdf') => {
+    if (!corpRef.current) return;
+    const filename = `corporate-org-chart.${format}`;
+    setExporting(format);
+    try {
+      if (format === 'png') await corpRef.current.exportToPng(filename);
+      else await corpRef.current.exportToPdf(filename);
     } finally {
       setExporting(null);
     }
@@ -86,6 +150,42 @@ export default function OrgChartPage() {
         >
           <FolderOpen size={14} /> By Project
         </button>
+        <button
+          onClick={() => setViewMode('department')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            viewMode === 'department' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'
+          }`}
+        >
+          <Building size={14} /> By Department
+        </button>
+        <button
+          onClick={() => setViewMode('corporate')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            viewMode === 'corporate' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'
+          }`}
+        >
+          <Building2 size={14} /> Corporate
+        </button>
+        {viewMode === 'corporate' && (
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => handleCorporateExport('png')}
+              disabled={exporting !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              title="Download corporate org chart as PNG image"
+            >
+              <ImageIcon size={14} /> {exporting === 'png' ? 'Generating…' : 'PNG'}
+            </button>
+            <button
+              onClick={() => handleCorporateExport('pdf')}
+              disabled={exporting !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              title="Download corporate org chart as PDF"
+            >
+              <FileText size={14} /> {exporting === 'pdf' ? 'Generating…' : 'PDF'}
+            </button>
+          </div>
+        )}
         {viewMode === 'hierarchy' && focal && (
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -111,6 +211,18 @@ export default function OrgChartPage() {
       {viewMode === 'project' && (
         <div className="flex-1 min-h-0">
           <OrgByProject employees={employees} projects={projects} initialProjectId={initialProjectId} />
+        </div>
+      )}
+
+      {viewMode === 'department' && (
+        <div className="flex-1 min-h-0">
+          <OrgByDepartment employees={employees} />
+        </div>
+      )}
+
+      {viewMode === 'corporate' && (
+        <div className="flex-1 min-h-0">
+          <CorporateOrgChart ref={corpRef} />
         </div>
       )}
 

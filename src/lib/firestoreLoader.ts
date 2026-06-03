@@ -5,9 +5,10 @@ import { setEmployees } from '../store/employeesSlice';
 import { setProjects } from '../store/projectsSlice';
 import { setProjectLayouts } from '../store/projectLayoutsSlice';
 import { setAppearance } from '../store/appearanceSlice';
+import { setCorporateChart } from '../store/corporateChartSlice';
 import { setUsers } from '../store/authSlice';
 import { setActivityLog } from '../store/activitySlice';
-import type { Employee, Project, ProjectLayout, AppearanceConfig, AppUser, ActivityEntry } from '../types';
+import type { Employee, Project, ProjectLayout, AppearanceConfig, CorporateChartConfig, AppUser, ActivityEntry } from '../types';
 
 export function subscribeToTenantData(
   tenantId: string,
@@ -47,6 +48,13 @@ export function subscribeToTenantData(
   unsubs.push(
     onSnapshot(doc(db, 'tenants', tenantId, 'config', 'appearance'), snap => {
       dispatch(setAppearance((snap.data() ?? {}) as AppearanceConfig));
+    }),
+  );
+
+  // Corporate chart in-place edits (single doc). No readiness gate.
+  unsubs.push(
+    onSnapshot(doc(db, 'tenants', tenantId, 'config', 'corporateChart'), snap => {
+      dispatch(setCorporateChart((snap.data() ?? {}) as CorporateChartConfig));
     }),
   );
 

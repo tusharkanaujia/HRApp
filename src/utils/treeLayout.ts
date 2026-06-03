@@ -1,10 +1,14 @@
 import type { Employee } from '../types';
+import { isPastLastWorkingDate } from './termination';
 
 export const NODE_W = 220;
 export const NODE_H = 120;
 const H_GAP = 28;
 const V_GAP = 56;
 export const LEVEL_H = NODE_H + V_GAP;
+// Compact "assistant" (EA/PA) card, rendered to the side of its manager.
+export const ASSIST_W = 168;
+export const ASSIST_H = 86;
 
 export interface LayoutNode {
   employee: Employee;
@@ -14,6 +18,7 @@ export interface LayoutNode {
   isFocal: boolean;
   childCount: number;
   isExpanded: boolean;
+  isAssistant?: boolean;
 }
 
 export interface LayoutEdge {
@@ -21,12 +26,15 @@ export interface LayoutEdge {
   toId: string;
   fx: number; fy: number;
   tx: number; ty: number;
+  assistant?: boolean;
 }
 
 export function buildChildrenMap(employees: Employee[]): Map<string, Employee[]> {
   const map = new Map<string, Employee[]>();
   for (const emp of employees) {
-    if (emp.managerId) {
+    // Assistants (EA/PA) are not laid out as normal reports — they're attached
+    // to the side of their manager, so keep them out of the descendant tree.
+    if (emp.managerId && !emp.assistant) {
       if (!map.has(emp.managerId)) map.set(emp.managerId, []);
       map.get(emp.managerId)!.push(emp);
     }
@@ -83,8 +91,12 @@ export function computeLayout(
   employees: Employee[],
   expanded: Set<string>,
 ): { nodes: LayoutNode[]; edges: LayoutEdge[]; childrenMap: Map<string, Employee[]> } {
-  const empMap = new Map<string, Employee>(employees.map(e => [e.id, e]));
-  const childrenMap = buildChildrenMap(employees);
+  // Hide employees whose termination last-day has already passed; their
+  // direct reports become orphans for chart purposes (kept in data, just
+  // not drawn beneath the terminated node).
+  const visible = employees.filter(e => !isPastLastWorkingDate(e));
+  const empMap = new Map<string, Employee>(visible.map(e => [e.id, e]));
+  const childrenMap = buildChildrenMap(visible);
 
   // Ancestor chain above focal (with cycle guard)
   const ancestors: Employee[] = [];
@@ -153,6 +165,37 @@ export function computeLayout(
     const parentPos = posIndex.get(emp.managerId);
     if (!parentPos) continue;
     edges.push({ fromId: emp.managerId, toId: id, fx: parentPos.x, fy: parentPos.y, tx: pos.x, ty: pos.y });
+  }
+
+  // Assistants (EA/PA): attach beside any rendered manager, stacked downward
+  // if there is more than one. Skip any already drawn (e.g. when an assistant
+  // is itself the focal node).
+  const assistantsByMgr = new Map<string, Employee[]>();
+  for (const e of visible) {
+    if (e.assistant && e.managerId) {
+      const arr = assistantsByMgr.get(e.managerId);
+      if (arr) arr.push(e); else assistantsByMgr.set(e.managerId, [e]);
+    }
+  }
+  const rendered = new Set(nodes.map(n => n.employee.id));
+  const ASSIST_GAP = 26;
+  for (const n of [...nodes]) {
+    const list = assistantsByMgr.get(n.employee.id);
+    if (!list) continue;
+    let stack = 0;
+    for (const a of list) {
+      if (rendered.has(a.id)) continue;
+      const ax = n.x + NODE_W / 2 + ASSIST_GAP + ASSIST_W / 2;
+      const ay = n.y + stack * (ASSIST_H + 14);
+      nodes.push({
+        employee: a, x: ax, y: ay,
+        isAncestor: false, isFocal: false, childCount: 0, isExpanded: false,
+        isAssistant: true,
+      });
+      edges.push({ fromId: n.employee.id, toId: a.id, fx: n.x, fy: n.y, tx: ax, ty: ay, assistant: true });
+      rendered.add(a.id);
+      stack++;
+    }
   }
 
   return { nodes, edges, childrenMap };

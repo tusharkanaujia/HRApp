@@ -83,6 +83,9 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
     offsets: Record<string, { dx: number; dy: number }>;
     expanded: string[];
     transform: { x: number; y: number; scale: number };
+    cardColors: Record<string, string>;
+    notes: Record<string, string>;
+    font: { family?: string; scale?: number; color?: string };
   }) => {
     if (!selectedProjectId || !canEdit) return;
     setSaveStatus('pending');
@@ -94,6 +97,9 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
         offsets: layout.offsets,
         expanded: layout.expanded,
         transform: layout.transform,
+        cardColors: layout.cardColors,
+        notes: layout.notes,
+        font: layout.font,
         updatedAt: new Date().toISOString(),
         updatedByName: currentUser?.name,
       }));
@@ -461,6 +467,9 @@ export default function OrgByProject({ employees, projects, initialProjectId }: 
                       initialOffsets={savedLayout?.offsets}
                       initialExpanded={savedLayout?.expanded}
                       initialTransform={savedLayout?.transform}
+                      initialCardColors={savedLayout?.cardColors}
+                      initialNotes={savedLayout?.notes}
+                      initialFont={savedLayout?.font}
                       onLayoutChange={canEdit ? handleLayoutChange : undefined}
                     />
                     {/* Layout save indicator + reset (editors only). Pinned

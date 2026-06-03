@@ -124,22 +124,6 @@ function normalizeName(name: string): string {
   return (name ?? '').toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
-// Designation → numeric level (lower = more senior, used for fallback assignment)
-function designationLevel(des: string): number {
-  const d = des.toUpperCase();
-  if (/MANAGING[\s-]*DIR|^MD$/.test(d)) return 0;
-  if (/DEPUTY.*MD|EXECUTIVE\s*DIR|^COO$|^CFO$|VP\s*PROJECT|PRESIDENT|OPERATIONS\s*DIR/.test(d)) return 1;
-  if (/GENERAL\s*MANAGER|PROJECT\s*DIRECTOR|PROJECTS\s*DIRECTOR|ASSISTANT\s*VP|HEAD\s*OF/.test(d)) return 2;
-  if (/SENIOR.*PROJECT\s*MANAGER|SENIOR.*CONSTRUCTION\s*MANAGER|SR\.?\s*MANAGER|SENIOR\s*MANAGER/.test(d)) return 3;
-  if (/PROJECT\s*MANAGER|CONSTRUCTION\s*MANAGER|TECHNICAL\s*MANAGER|PLANNING\s*MANAGER|FINANCE\s*MANAGER|DIRECTOR|QS\s*MANAGER|QUANTITY.*MANAGER|DIVISION\s*MANAGER/.test(d)) return 4;
-  if (/SENIOR.*ENGINEER|SENIOR.*SURVEYOR|SR\.?\s*(ENGINEER|SITE|PROJECT)|SENIOR\s*SITE/.test(d)) return 5;
-  if (/PROJECT\s*ENGINEER|SITE\s*ENGINEER|ENGINEER|QUANTITY\s*SURVEYOR|COORDINATOR|INSPECTOR|MANAGER$/.test(d)) return 6;
-  if (/SUPERVISOR|FOREMAN|CHARGEHAND|INCHARGE|IN-CHARGE/.test(d)) return 7;
-  if (/TECHNICIAN|FITTER|CARPENTER|MASON|PLUMBER|WELDER|ELECTRICIAN|FABRICAT|PAINTER|SCAFFOL|RIGGER|INSULATOR|DUCTMAN|DUCTING|DRAFTSMAN|DRAUGHTSMAN|STORE/.test(d)) return 8;
-  if (/HELPER|LABOUR|DRIVER|OPERATOR|CLEANER|WATCHMAN|OFFICE\s*BOY|TYPIST|RECEPTIONIST/.test(d)) return 9;
-  return 7;
-}
-
 export function loadExcelEmployees(): Employee[] {
   // Build Employee objects
   const employees: Employee[] = rawData.map(r => ({
@@ -168,7 +152,12 @@ export function loadExcelEmployees(): Employee[] {
     idIndex.set(e.id, e);
   });
 
-  // Phase 1: assign managerId from Line Manager 1 name (direct from Excel)
+  // Assign managerId from Line Manager 1 name (direct from Excel).
+  // The import script (scripts/importNewEmpList.js) has already:
+  //   - resolved comma-separated manager cells to a single name
+  //   - added virtual employee rows for managers not present in the file
+  // So every non-empty managerName should resolve here. No heuristic fallback
+  // — if a manager is unknown it stays null rather than fabricating a link.
   rawData.forEach(r => {
     const emp = idIndex.get(r.id);
     if (!emp) return;
@@ -179,7 +168,6 @@ export function loadExcelEmployees(): Employee[] {
         return;
       }
     }
-    // Fallback: use LM2 emp ID if LM1 name didn't resolve
     if (r.lm2EmpId) {
       const lm2Padded = r.lm2EmpId.trim().padStart(5, '0');
       const mgrid = empIdIndex.get(lm2Padded);
@@ -187,33 +175,6 @@ export function loadExcelEmployees(): Employee[] {
         emp.managerId = mgrid;
       }
     }
-  });
-
-  // Phase 2: designation-level fallback for any still without a manager
-  const groups = new Map<string, Employee[]>();
-  employees.forEach(e => {
-    const key = `${e.division}|${e.projectIds[0] ?? 'general'}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(e);
-  });
-
-  groups.forEach(members => {
-    const sorted = [...members].sort(
-      (a, b) => designationLevel(a.designation) - designationLevel(b.designation)
-    );
-    const levelRep = new Map<number, string>();
-    sorted.forEach(e => {
-      const lv = designationLevel(e.designation);
-      if (!levelRep.has(lv)) levelRep.set(lv, e.id);
-    });
-    sorted.forEach(e => {
-      if (e.managerId !== null) return;
-      const myLevel = designationLevel(e.designation);
-      for (let l = myLevel - 1; l >= 0; l--) {
-        const repId = levelRep.get(l);
-        if (repId && repId !== e.id) { e.managerId = repId; return; }
-      }
-    });
   });
 
   return employees;

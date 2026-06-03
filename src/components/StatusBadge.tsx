@@ -1,11 +1,12 @@
 import type { EmployeeStatus } from '../types';
 
 const config: Record<EmployeeStatus, { label: string; classes: string }> = {
-  ACTIVE:      { label: 'Active',      classes: 'bg-emerald-100 text-emerald-700' },
-  INACTIVE:    { label: 'Inactive',    classes: 'bg-red-100 text-red-700' },
-  ON_VACATION: { label: 'On Vacation', classes: 'bg-gray-100 text-gray-600' },
-  RESIGNED:    { label: 'Resigned',    classes: 'bg-yellow-100 text-yellow-700' },
-  VACANT:      { label: 'Vacant',      classes: 'bg-purple-100 text-purple-700' },
+  ACTIVE:     { label: 'Active',     classes: 'bg-emerald-100 text-emerald-700' },
+  ONBOARDING: { label: 'Onboarding', classes: 'bg-yellow-100 text-yellow-700' },
+  INACTIVE:   { label: 'Inactive',   classes: 'bg-slate-200 text-slate-600' },
+  RESIGNED:   { label: 'Resigned',   classes: 'bg-orange-100 text-orange-700' },
+  TERMINATED: { label: 'Terminated', classes: 'bg-red-600 text-white' },
+  ABSCONDED:  { label: 'Absconded',  classes: 'bg-zinc-800 text-white' },
 };
 
 export default function StatusBadge({ status }: { status: EmployeeStatus }) {
@@ -20,10 +21,11 @@ export default function StatusBadge({ status }: { status: EmployeeStatus }) {
 export function statusDotColor(status: EmployeeStatus): string {
   const map: Record<EmployeeStatus, string> = {
     ACTIVE: '#10b981',
-    INACTIVE: '#ef4444',
-    ON_VACATION: '#9ca3af',
-    RESIGNED: '#f59e0b',
-    VACANT: '#a855f7',
+    ONBOARDING: '#eab308',
+    INACTIVE: '#94a3b8',
+    RESIGNED: '#f97316',
+    TERMINATED: '#dc2626',
+    ABSCONDED: '#27272a',
   };
   return map[status] || '#10b981';
 }

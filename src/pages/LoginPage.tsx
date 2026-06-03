@@ -26,6 +26,7 @@ export default function LoginPage() {
     e.preventDefault();
     const match = users.find(u => u.username === username.trim() && u.password === password);
     if (!match) { setError('Invalid username or password.'); return; }
+    if (match.disabled) { setError('This account has been disabled. Contact your administrator.'); return; }
     setError('');
     dispatch(login({ username: username.trim(), password }));
   };

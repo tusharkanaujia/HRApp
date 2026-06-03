@@ -4,11 +4,13 @@ import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
 import StatusBadge from '../components/StatusBadge';
 import AddEmployeeModal from '../components/AddEmployeeModal';
+import EndEmploymentModal from '../components/EndEmploymentModal';
 import { useAuth } from '../hooks/useAuth';
 import {
   ArrowLeft, Pencil, GitBranch, Briefcase, MapPin, Calendar, Building2,
-  User, IdCard, Users as UsersIcon, FolderOpen, Clock, ExternalLink,
+  User, IdCard, Users as UsersIcon, FolderOpen, Clock, ExternalLink, UserX, LogOut,
 } from 'lucide-react';
+import { isEnded } from '../utils/termination';
 import type { ActivityAction } from '../types';
 
 const DIV_STYLE: Record<string, string> = {
@@ -33,13 +35,14 @@ const PROJECT_STATUS_COLORS: Record<string, string> = {
 };
 
 const ACTION_META: Record<ActivityAction, { label: string; color: string }> = {
-  ADD_EMPLOYEE:     { label: 'Added',           color: 'bg-emerald-100 text-emerald-700' },
-  EDIT_EMPLOYEE:    { label: 'Edited',          color: 'bg-blue-100 text-blue-700' },
-  DELETE_EMPLOYEE:  { label: 'Deleted',         color: 'bg-red-100 text-red-600' },
-  CHANGE_HIERARCHY: { label: 'Hierarchy',       color: 'bg-purple-100 text-purple-700' },
-  ADD_PROJECT:      { label: 'Project Added',   color: 'bg-teal-100 text-teal-700' },
-  EDIT_PROJECT:     { label: 'Project Edited',  color: 'bg-sky-100 text-sky-700' },
-  DELETE_PROJECT:   { label: 'Project Deleted', color: 'bg-orange-100 text-orange-700' },
+  ADD_EMPLOYEE:       { label: 'Added',           color: 'bg-emerald-100 text-emerald-700' },
+  EDIT_EMPLOYEE:      { label: 'Edited',          color: 'bg-blue-100 text-blue-700' },
+  DELETE_EMPLOYEE:    { label: 'Deleted',         color: 'bg-red-100 text-red-600' },
+  CHANGE_HIERARCHY:   { label: 'Hierarchy',       color: 'bg-purple-100 text-purple-700' },
+  TERMINATE_EMPLOYEE: { label: 'Terminated',      color: 'bg-red-600 text-white' },
+  ADD_PROJECT:        { label: 'Project Added',   color: 'bg-teal-100 text-teal-700' },
+  EDIT_PROJECT:       { label: 'Project Edited',  color: 'bg-sky-100 text-sky-700' },
+  DELETE_PROJECT:     { label: 'Project Deleted', color: 'bg-orange-100 text-orange-700' },
 };
 
 function formatTime(iso: string) {
@@ -65,6 +68,7 @@ export default function EmployeeDetailPage() {
   const activityLog = useSelector((s: RootState) => s.activity.log);
 
   const [showEdit, setShowEdit] = useState(false);
+  const [showEnd, setShowEnd] = useState(false);
 
   const employee = useMemo(() => employees.find(e => e.id === id), [employees, id]);
   const manager = useMemo(
@@ -112,6 +116,35 @@ export default function EmployeeDetailPage() {
         <ArrowLeft size={14} /> Back
       </button>
 
+      {/* End-of-employment banner */}
+      {isEnded(employee) && (() => {
+        const verb = employee.status === 'RESIGNED' ? 'Resigned'
+          : employee.status === 'ABSCONDED' ? 'Absconded'
+          : 'Terminated';
+        const palette = employee.status === 'RESIGNED' ? 'bg-orange-50 border-orange-200 text-orange-700'
+          : employee.status === 'ABSCONDED' ? 'bg-zinc-100 border-zinc-300 text-zinc-800'
+          : 'bg-red-50 border-red-200 text-red-700';
+        return (
+          <div className={`mb-4 border rounded-xl px-5 py-3 flex items-start gap-3 ${palette}`}>
+            <UserX size={18} className="flex-shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">
+                {verb}{employee.lastWorkingDate ? ` · last working day ${employee.lastWorkingDate}` : ''}
+              </p>
+              {employee.terminationReason && (
+                <p className="text-xs opacity-80 mt-0.5 whitespace-pre-wrap">{employee.terminationReason}</p>
+              )}
+              {(employee.terminatedByName || employee.terminatedAt) && (
+                <p className="text-[11px] opacity-70 mt-1">
+                  Recorded by {employee.terminatedByName ?? 'Unknown'}
+                  {employee.terminatedAt ? ` on ${formatTime(employee.terminatedAt)}` : ''}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Header card */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
         <div className="flex items-start gap-5">
@@ -149,6 +182,14 @@ export default function EmployeeDetailPage() {
                     className="flex items-center gap-1.5 text-sm bg-blue-600 text-white hover:bg-blue-700 px-3 py-2 rounded-lg"
                   >
                     <Pencil size={14} /> Edit
+                  </button>
+                )}
+                {canEdit && !isEnded(employee) && (
+                  <button
+                    onClick={() => setShowEnd(true)}
+                    className="flex items-center gap-1.5 text-sm text-slate-700 border border-slate-300 hover:bg-slate-50 px-3 py-2 rounded-lg"
+                  >
+                    <LogOut size={14} /> End Employment
                   </button>
                 )}
               </div>
@@ -355,6 +396,7 @@ export default function EmployeeDetailPage() {
       </div>
 
       {showEdit && <AddEmployeeModal employee={employee} onClose={() => setShowEdit(false)} />}
+      {showEnd && <EndEmploymentModal employee={employee} onClose={() => setShowEnd(false)} />}
     </div>
   );
 }

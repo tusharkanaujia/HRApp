@@ -24,6 +24,8 @@ export function exportEmployeesToExcel(
     'Accommodation': e.accommodation ?? '',
     'Passport': e.passportNumber ?? '',
     'Remarks': e.remarks ?? '',
+    'Last Working Date': e.lastWorkingDate ?? '',
+    'Termination Reason': e.terminationReason ?? '',
   }));
 
   const ws = XLSX.utils.json_to_sheet(rows);

@@ -94,6 +94,25 @@ export const firestoreMiddleware: Middleware =
         break;
       }
 
+      // ── Corporate chart edits (single doc at config/corporateChart) ──────────
+      // Full replace (no merge) so removed cards / cleared overrides persist.
+      case 'corporateChart/setCorporateFont':
+      case 'corporateChart/setCardOverride':
+      case 'corporateChart/addCorporateCard':
+      case 'corporateChart/updateAddedCard':
+      case 'corporateChart/deleteCorporateCard':
+      case 'corporateChart/addCorporateEdge':
+      case 'corporateChart/removeCorporateEdge':
+      case 'corporateChart/replaceCorporateChart':
+      case 'corporateChart/resetCorporateChart': {
+        const state = store.getState() as { corporateChart: Record<string, unknown> };
+        setDoc(
+          doc(db, 'tenants', currentTenantId, 'config', 'corporateChart'),
+          stripUndefined(state.corporateChart as Record<string, unknown>),
+        ).catch(console.error);
+        break;
+      }
+
       // ── Users ─────────────────────────────────────────────────────────────
       case 'auth/addUser':
         setDoc(ref('users', (payload as { id: string }).id), stripUndefined(payload as Record<string, unknown>))

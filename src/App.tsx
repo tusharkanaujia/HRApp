@@ -13,6 +13,7 @@ import UsersPage from './pages/UsersPage';
 import AppearancePage from './pages/AppearancePage';
 import ActivityPage from './pages/ActivityPage';
 import { TenantProvider, useTenant } from './contexts/TenantContext';
+import { ToastProvider } from './contexts/ToastContext';
 import { setTenantId } from './lib/firestoreSync';
 import { subscribeToTenantData } from './lib/firestoreLoader';
 import type { AppDispatch } from './store';
@@ -79,6 +80,7 @@ function AppShell() {
   return (
     <DataLoader>
       <BrowserRouter>
+        <ToastProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<ProtectedRoute />}>
@@ -94,6 +96,7 @@ function AppShell() {
             </Route>
           </Route>
         </Routes>
+        </ToastProvider>
       </BrowserRouter>
     </DataLoader>
   );

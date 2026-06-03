@@ -6,6 +6,8 @@ import {
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Rows3, Columns3,
+  StickyNote, Ban, Palette,
+  Undo2, Redo2,
   X,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
@@ -15,6 +17,14 @@ import { computeLayout, NODE_W, NODE_H, ASSIST_W, ASSIST_H } from '../utils/tree
 import { statusDotColor } from './StatusBadge';
 import { isTerminationPending, isOnboardingPending, employeeStateTooltip } from '../utils/termination';
 import { useColors } from '../hooks/useColors';
+import { useUndoRedo } from '../hooks/useUndoRedo';
+
+interface TreeSnap {
+  offsets: Record<string, { dx: number; dy: number }>;
+  cardColors: Record<string, string>;
+  notes: Record<string, string>;
+  font: { family?: string; scale?: number; color?: string };
+}
 
 export interface ExportMeta {
   companyName?: string;       // e.g. "Ancient Builders Constructions LLC"
@@ -43,16 +53,29 @@ interface Props {
   initialOffsets?: Record<string, { dx: number; dy: number }>;
   initialExpanded?: string[];
   initialTransform?: { x: number; y: number; scale: number };
+  initialCardColors?: Record<string, string>;
+  initialNotes?: Record<string, string>;
+  initialFont?: { family?: string; scale?: number; color?: string };
   onLayoutChange?: (layout: {
     offsets: Record<string, { dx: number; dy: number }>;
     expanded: string[];
     transform: { x: number; y: number; scale: number };
+    cardColors: Record<string, string>;
+    notes: Record<string, string>;
+    font: { family?: string; scale?: number; color?: string };
   }) => void;
 }
 
 function initials(name: string) {
   return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 }
+
+// Preset card background swatches shown in the selection toolbar. The first
+// (white) doubles as "reset to default".
+const CARD_BG_PRESETS = [
+  '#ffffff', '#fee2e2', '#ffedd5', '#fef9c3',
+  '#dcfce7', '#dbeafe', '#f3e8ff', '#e2e8f0',
+];
 
 const COMPANY_COLORS: Record<string, string> = {
   'Ancient Builders Constructions LLC': '#3b82f6',
@@ -67,6 +90,9 @@ function OrgTreeView({
   initialOffsets,
   initialExpanded,
   initialTransform,
+  initialCardColors,
+  initialNotes,
+  initialFont,
   onLayoutChange,
 }: Props, ref: React.Ref<OrgTreeViewHandle>) {
   const navigate = useNavigate();
@@ -74,7 +100,8 @@ function OrgTreeView({
   // Controlled = parent is feeding a layout (either to read, to write, or
   // both). When controlled, we skip the focal-change reset and the auto-
   // center, so viewers see the saved layout even as they navigate within it.
-  const controlled = !!onLayoutChange || !!initialOffsets || !!initialExpanded || !!initialTransform;
+  const controlled = !!onLayoutChange || !!initialOffsets || !!initialExpanded || !!initialTransform
+    || !!initialCardColors || !!initialNotes || !!initialFont;
   const containerRef = useRef<HTMLDivElement>(null);
   const panZoomRef = useRef<HTMLDivElement>(null);
   const [transform, setTransform] = useState(
@@ -109,6 +136,47 @@ function OrgTreeView({
   // closures otherwise), state drives the rendered rectangle.
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const marqueeRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  // Per-card background color and free-text note, both keyed by employee id.
+  // Seeded from the saved layout in controlled mode; persisted via onLayoutChange.
+  const [cardColors, setCardColors] = useState<Record<string, string>>(
+    () => initialCardColors ?? {},
+  );
+  const [notes, setNotes] = useState<Record<string, string>>(
+    () => initialNotes ?? {},
+  );
+  // The note (employee id) currently open in its inline editor, if any.
+  const [editingNote, setEditingNote] = useState<string | null>(null);
+  // Global card-text font for the whole chart (family / size scale / color).
+  const [font, setFont] = useState<{ family?: string; scale?: number; color?: string }>(
+    () => initialFont ?? {},
+  );
+  const [fontOpen, setFontOpen] = useState(false);
+  // Press bookkeeping for click-vs-drag on a card body, and additive marquee.
+  const cardPress = useRef<{ id: string; startX: number; startY: number; moved: boolean } | null>(null);
+  const marqueeAdditiveRef = useRef(false);
+
+  // Undo/redo over the editable content (offsets / colors / notes / font).
+  // recordEdit() snapshots the pre-edit state; undo/redo restore it. View
+  // state (pan/zoom, expand, selection) is intentionally excluded.
+  const history = useUndoRedo<TreeSnap>();
+  const recordEdit = useCallback(() => {
+    history.record({ offsets, cardColors, notes, font });
+  }, [history, offsets, cardColors, notes, font]);
+  const applySnap = (s: TreeSnap) => {
+    setOffsets(s.offsets); setCardColors(s.cardColors); setNotes(s.notes); setFont(s.font);
+  };
+  const doUndo = useCallback(() => {
+    const s = history.undo({ offsets, cardColors, notes, font });
+    if (s) applySnap(s);
+  }, [history, offsets, cardColors, notes, font]);
+  const doRedo = useCallback(() => {
+    const s = history.redo({ offsets, cardColors, notes, font });
+    if (s) applySnap(s);
+  }, [history, offsets, cardColors, notes, font]);
+  // For drags we snapshot at drag-start and only commit to history on mouseup
+  // if the card actually moved — so a plain click isn't an undo step.
+  const preDragSnap = useRef<TreeSnap | null>(null);
+  const nodeDragMoved = useRef(false);
 
   // Reset expansion, manual offsets, and center when focal changes — but only
   // when uncontrolled. In controlled mode the parent owns layout lifecycle.
@@ -116,6 +184,10 @@ function OrgTreeView({
     if (controlled) return;
     setExpanded(new Set([focalId]));
     setOffsets({});
+    setCardColors({});
+    setNotes({});
+    setEditingNote(null);
+    setFont({});
   }, [focalId, controlled]);
 
   // Emit layout changes to the parent (debouncing is the parent's job).
@@ -130,8 +202,8 @@ function OrgTreeView({
     const cb = onLayoutChangeRef.current;
     if (!cb) return;
     if (!didMountRef.current) { didMountRef.current = true; return; }
-    cb({ offsets, expanded: [...expanded], transform });
-  }, [offsets, expanded, transform]);
+    cb({ offsets, expanded: [...expanded], transform, cardColors, notes, font });
+  }, [offsets, expanded, transform, cardColors, notes, font]);
 
   const dxOf = (id: string) => offsets[id]?.dx ?? 0;
   const dyOf = (id: string) => offsets[id]?.dy ?? 0;
@@ -151,7 +223,12 @@ function OrgTreeView({
   // Bounding box — use reduce to avoid call-stack limit with large arrays.
   // Includes manual drag offsets so moved cards aren't clipped on export.
   const minX = nodes.reduce((m, n) => Math.min(m, n.x + dxOf(n.employee.id) - NODE_W / 2), Infinity) - 60;
-  const maxX = nodes.reduce((m, n) => Math.max(m, n.x + dxOf(n.employee.id) + NODE_W / 2), -Infinity) + 60;
+  // A non-empty note extends ~160px past the card's right edge — include it so
+  // notes aren't clipped from exports.
+  const maxX = nodes.reduce((m, n) => {
+    const right = n.x + dxOf(n.employee.id) + NODE_W / 2;
+    return Math.max(m, notes[n.employee.id]?.trim() ? right + 160 : right);
+  }, -Infinity) + 60;
   const minY = nodes.reduce((m, n) => Math.min(m, n.y + dyOf(n.employee.id) - NODE_H / 2), Infinity) - 60;
   const maxY = nodes.reduce((m, n) => Math.max(m, n.y + dyOf(n.employee.id) + NODE_H / 2), -Infinity) + 60;
   const svgW = nodes.length ? maxX - minX : 0;
@@ -172,29 +249,41 @@ function OrgTreeView({
   }, [focalId, controlled, initialTransform]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
+    // Zoom only with Ctrl/Cmd held — plain scroll is left alone so it doesn't
+    // fight selecting/moving cards.
+    if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.1 : 0.9;
     setTransform(t => ({ ...t, scale: Math.max(0.15, Math.min(3, t.scale * factor)) }));
   }, []);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
-    // Shift+drag on the canvas starts a marquee (rubber-band) selection.
-    // We DON'T also start a pan in this case.
-    if (e.shiftKey && containerRef.current) {
+    // Ctrl/Cmd + drag pans the canvas.
+    if (e.ctrlKey || e.metaKey) {
+      drag.current = { startX: e.clientX, startY: e.clientY, tx: transform.x, ty: transform.y };
+      return;
+    }
+    // Plain (or Shift) drag on the empty canvas is a marquee selection. Shift
+    // is additive; plain replaces (and a plain click on empty space clears).
+    if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
       const m = { x1: px, y1: py, x2: px, y2: py };
       marqueeRef.current = m;
+      marqueeAdditiveRef.current = e.shiftKey;
       setMarquee(m);
-      return;
     }
-    drag.current = { startX: e.clientX, startY: e.clientY, tx: transform.x, ty: transform.y };
-    // Plain click on the empty canvas clears the selection.
-    if (!e.ctrlKey && !e.metaKey) setSelected(new Set());
   }, [transform]);
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
+    // Promote a card press to a drag once the pointer moves past a threshold,
+    // so a click (no movement) still selects rather than nudging the card.
+    if (cardPress.current && !cardPress.current.moved) {
+      if (Math.abs(e.clientX - cardPress.current.startX) > 3 || Math.abs(e.clientY - cardPress.current.startY) > 3) {
+        cardPress.current.moved = true;
+      }
+    }
     if (marqueeRef.current && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       const updated = { ...marqueeRef.current, x2: e.clientX - rect.left, y2: e.clientY - rect.top };
@@ -204,6 +293,7 @@ function OrgTreeView({
     }
     const nd = nodeDrag.current;
     if (nd) {
+      nodeDragMoved.current = true;
       const scale = transform.scale || 1;
       const ddx = (e.clientX - nd.startX) / scale;
       const ddy = (e.clientY - nd.startY) / scale;
@@ -237,9 +327,13 @@ function OrgTreeView({
       const right  = Math.max(m.x1, m.x2) + containerRect.left;
       const top    = Math.min(m.y1, m.y2) + containerRect.top;
       const bottom = Math.max(m.y1, m.y2) + containerRect.top;
-      // Treat a near-zero marquee as a click — don't change selection.
+      // Treat a near-zero marquee as a click on empty canvas.
       const isClick = Math.abs(m.x2 - m.x1) < 3 && Math.abs(m.y2 - m.y1) < 3;
-      if (!isClick) {
+      const additive = marqueeAdditiveRef.current;
+      if (isClick) {
+        // Plain click on empty space clears; Shift+click leaves selection be.
+        if (!additive) setSelected(new Set());
+      } else {
         const hit = new Set<string>();
         containerRef.current.querySelectorAll<HTMLElement>('[data-empid]').forEach(el => {
           const r = el.getBoundingClientRect();
@@ -248,10 +342,9 @@ function OrgTreeView({
             if (id) hit.add(id);
           }
         });
-        // Additive — Shift was held when starting the marquee, so we union
-        // with the prior selection.
+        // Shift = add to selection; plain = replace.
         setSelected(prev => {
-          const next = new Set(prev);
+          const next = additive ? new Set(prev) : new Set<string>();
           hit.forEach(id => next.add(id));
           return next;
         });
@@ -259,13 +352,26 @@ function OrgTreeView({
       marqueeRef.current = null;
       setMarquee(null);
     }
+    // A card press that never moved is a plain click → select just that card.
+    if (cardPress.current) {
+      if (!cardPress.current.moved) setSelected(new Set([cardPress.current.id]));
+      cardPress.current = null;
+    }
+    // Commit a moved drag to the undo history (one step per drag).
+    if (nodeDrag.current && nodeDragMoved.current && preDragSnap.current) {
+      history.record(preDragSnap.current);
+    }
+    preDragSnap.current = null;
+    nodeDragMoved.current = false;
     drag.current = null;
     nodeDrag.current = null;
-  }, []);
+  }, [history]);
 
   const startNodeDrag = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    preDragSnap.current = { offsets, cardColors, notes, font };
+    nodeDragMoved.current = false;
     // If the grip is on a selected card and there are siblings selected, drag
     // them as a group — otherwise it's a single-card drag.
     if (selected.has(id) && selected.size > 1) {
@@ -276,7 +382,7 @@ function OrgTreeView({
     } else {
       nodeDrag.current = { kind: 'single', id, startX: e.clientX, startY: e.clientY, dx: offsets[id]?.dx ?? 0, dy: offsets[id]?.dy ?? 0 };
     }
-  }, [offsets, selected]);
+  }, [offsets, selected, cardColors, notes, font]);
 
   const toggleSelected = useCallback((id: string) => {
     setSelected(prev => {
@@ -286,16 +392,19 @@ function OrgTreeView({
     });
   }, []);
 
-  const handleNodeClick = (id: string, e?: React.MouseEvent) => {
-    // Modifier-click toggles selection (multi-select).
-    if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+  // Card body press: plain drag moves the card (group if multi-selected),
+  // modifier+click toggles selection, plain click (no move) selects it.
+  // Clicks on inner buttons (expand / nav / grip) are ignored here.
+  const onCardMouseDown = useCallback((id: string, e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.stopPropagation();
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
       toggleSelected(id);
       return;
     }
-    // Plain click — replace selection with just this card. We deliberately
-    // do NOT change focal here; focal navigation lives on the ↑/↓ buttons.
-    setSelected(new Set([id]));
-  };
+    startNodeDrag(id, e);
+    cardPress.current = { id, startX: e.clientX, startY: e.clientY, moved: false };
+  }, [toggleSelected, startNodeDrag]);
 
   // Hierarchy navigation — used by the ↑ (manager) and ↓ (first report)
   // buttons on each card. When uncontrolled, fall back to URL nav.
@@ -324,6 +433,20 @@ function OrgTreeView({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) for undo/redo. Ignore while typing in a note.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); }
+      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); doRedo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [doUndo, doRedo]);
 
   // ── Alignment / distribution helpers ──────────────────────────────────────
   // Each helper computes new (dx, dy) for every selected card and writes them
@@ -406,8 +529,91 @@ function OrgTreeView({
         setTarget(it.id, it.naturalX, it.naturalY, tx, ty);
       }
     }
+    recordEdit();
     setOffsets(next);
-  }, [selected, nodes, offsets]);
+  }, [selected, nodes, offsets, recordEdit]);
+
+  // ── Card color & notes ─────────────────────────────────────────────────────
+  // Apply a background color to every selected card. Passing null (or white,
+  // the default) clears the override so the card falls back to plain white.
+  const applyCardColor = useCallback((color: string | null) => {
+    if (!selected.size) return;
+    recordEdit();
+    setCardColors(prev => {
+      const next = { ...prev };
+      for (const id of selected) {
+        if (!color || color.toLowerCase() === '#ffffff') delete next[id];
+        else next[id] = color;
+      }
+      return next;
+    });
+  }, [selected, recordEdit]);
+
+  // Add (or focus) a note beside each selected card. A single selection opens
+  // its editor immediately so the user can type right away.
+  const addNoteToSelected = useCallback(() => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    recordEdit();
+    setNotes(prev => {
+      const next = { ...prev };
+      for (const id of ids) if (next[id] === undefined) next[id] = '';
+      return next;
+    });
+    if (ids.length === 1) setEditingNote(ids[0]);
+  }, [selected, recordEdit]);
+
+  const updateNote = useCallback((id: string, text: string) => {
+    setNotes(prev => ({ ...prev, [id]: text }));
+  }, []);
+
+  // On blur, drop empty notes so they don't linger as invisible entries.
+  const finishNote = useCallback((id: string) => {
+    setEditingNote(cur => (cur === id ? null : cur));
+    setNotes(prev => {
+      if (prev[id]?.trim()) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  // Note shown to the right of a card. `leftPx` is the card width so the note
+  // sits just outside the card's right edge.
+  const renderNote = (id: string, leftPx: number) => {
+    const text = notes[id];
+    if (text === undefined) return null;
+    const editing = editingNote === id;
+    if (!editing && !text) return null;
+    return (
+      <div
+        className="absolute"
+        style={{ left: leftPx + 10, top: 0, width: 150, zIndex: 6 }}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+      >
+        {editing ? (
+          <textarea
+            autoFocus
+            value={text}
+            rows={3}
+            placeholder="Add note…"
+            onChange={e => updateNote(id, e.target.value)}
+            onBlur={() => finishNote(id)}
+            className="w-full text-[10px] leading-snug p-1.5 rounded-md border border-blue-300 bg-white text-slate-700 shadow-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        ) : (
+          <div
+            onClick={() => { recordEdit(); setEditingNote(id); }}
+            title="Click to edit note"
+            className="text-[10px] leading-snug p-1.5 rounded-md bg-amber-50 border border-amber-200 text-slate-700 whitespace-pre-wrap break-words cursor-text shadow-sm hover:border-amber-300"
+          >
+            {text}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Capture the full pan-zoom content to a canvas via an offscreen clone (doesn't disturb the live view).
   // When `meta` is provided, wraps the tree in a bordered frame with a header (company info)
@@ -437,8 +643,21 @@ function OrgTreeView({
     // Drag grips are UI-only — strip them from the exported image.
     clone.querySelectorAll('[data-grip]').forEach((el) => el.remove());
 
+    // html2canvas only reliably renders an <svg> when it has width/height
+    // ATTRIBUTES (CSS sizing alone often yields a 0×0 / dropped SVG, which is
+    // why connector lines went missing). Mirror the CSS size onto attributes.
+    clone.querySelectorAll('svg').forEach((svg) => {
+      const ww = parseFloat((svg as SVGElement & { style: CSSStyleDeclaration }).style.width);
+      const hh = parseFloat((svg as SVGElement & { style: CSSStyleDeclaration }).style.height);
+      if (Number.isFinite(ww)) svg.setAttribute('width', String(ww));
+      if (Number.isFinite(hh)) svg.setAttribute('height', String(hh));
+    });
+
+    // Enlarge node cards for a crisper export. Only DIV children are nodes —
+    // skip the connector <svg> (and any <style>) so it isn't mangled/clipped.
     Array.from(clone.children).forEach((child) => {
       const el = child as HTMLElement;
+      if (el.tagName !== 'DIV') return;
       const w = parseFloat(el.style.width);
       const h = parseFloat(el.style.height);
       if (Number.isFinite(w) && w > 50 && w < 400) {
@@ -447,6 +666,16 @@ function OrgTreeView({
         el.style.left = `${parseFloat(el.style.left) - (w * (NODE_SCALE - 1)) / 2}px`;
         el.style.top = `${parseFloat(el.style.top) - (h * (NODE_SCALE - 1)) / 2}px`;
       }
+    });
+
+    // Give cards a crisp outline in the export — box-shadows render poorly in
+    // html2canvas, so cards otherwise look border-less. Keep the colored left
+    // accent (borderLeft) and add a light hairline on the other three sides.
+    clone.querySelectorAll<HTMLElement>('.rounded-xl, .rounded-lg').forEach((el) => {
+      el.style.borderTop = '1px solid #e2e8f0';
+      el.style.borderRight = '1px solid #e2e8f0';
+      el.style.borderBottom = '1px solid #e2e8f0';
+      el.style.boxShadow = 'none';
     });
 
     clone.querySelectorAll<HTMLElement>('p, span').forEach((el) => {
@@ -472,6 +701,13 @@ function OrgTreeView({
     if (HAS_FRAME) {
       wrapper.style.border = `${BORDER}px solid #1e293b`;
     }
+    // Carry the global font settings onto the clone so exports match the live
+    // view — the injected `.org-tree-fonted` rules are global and apply here.
+    wrapper.classList.add('org-tree-fonted');
+    if (font.color) wrapper.classList.add('tf-color');
+    wrapper.style.setProperty('--tfs', String(font.scale ?? 1));
+    wrapper.style.setProperty('--tff', font.family || 'inherit');
+    wrapper.style.setProperty('--tfc', font.color || 'inherit');
 
     if (HAS_FRAME && meta) {
       // ── Header ─────────────────────────────────────────────────────────────
@@ -636,7 +872,7 @@ function OrgTreeView({
     } finally {
       document.body.removeChild(wrapper);
     }
-  }, [minX, minY, svgW, svgH, nodes.length]);
+  }, [minX, minY, svgW, svgH, nodes.length, font]);
 
   useImperativeHandle(ref, () => ({
     async exportToPng(filename: string, meta?: ExportMeta) {
@@ -665,13 +901,30 @@ function OrgTreeView({
   return (
     <div
       ref={containerRef}
-      className="org-tree-container w-full h-full overflow-hidden relative bg-slate-50"
+      className={`org-tree-container org-tree-fonted w-full h-full overflow-hidden relative bg-slate-50 ${font.color ? 'tf-color' : ''}`}
+      style={{
+        ['--tfs' as string]: font.scale ?? 1,
+        ['--tff' as string]: font.family || 'inherit',
+        ['--tfc' as string]: font.color || 'inherit',
+      } as React.CSSProperties}
       onWheel={onWheel}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseUp}
     >
+      {/* Global card-text font overrides (family / size scale / color). The
+          size rules scale each fixed Tailwind size by --tfs so the relative
+          hierarchy is preserved; family/color cascade to card text only. */}
+      <style>{`
+        .org-tree-fonted [data-empid] p, .org-tree-fonted [data-empid] span { font-family: var(--tff, inherit); }
+        .org-tree-fonted [data-empid] .text-\\[8px\\]  { font-size: calc(8px  * var(--tfs, 1)); }
+        .org-tree-fonted [data-empid] .text-\\[9px\\]  { font-size: calc(9px  * var(--tfs, 1)); }
+        .org-tree-fonted [data-empid] .text-\\[10px\\] { font-size: calc(10px * var(--tfs, 1)); }
+        .org-tree-fonted [data-empid] .text-\\[11px\\] { font-size: calc(11px * var(--tfs, 1)); }
+        .org-tree-fonted.tf-color [data-empid] p { color: var(--tfc) !important; }
+      `}</style>
+
       {/* Dot grid background */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
         <defs>
@@ -763,6 +1016,7 @@ function OrgTreeView({
                 key={emp.id}
                 data-empid={emp.id}
                 title={employeeStateTooltip(emp)}
+                onMouseDown={e => e.stopPropagation()}
                 style={{ position: 'absolute', left: ox - ASSIST_W / 2, top: oy - ASSIST_H / 2, width: ASSIST_W, height: ASSIST_H, zIndex: 3 }}
               >
                 <button
@@ -778,8 +1032,8 @@ function OrgTreeView({
                   className={`w-full h-full rounded-lg bg-white border border-dashed border-slate-300 shadow-sm flex items-center gap-2 px-2 cursor-pointer hover:shadow-md ${
                     selected.has(emp.id) ? 'ring-2 ring-blue-500 ring-offset-1' : ''
                   }`}
-                  style={{ borderLeft: `3px solid ${compColor}` }}
-                  onClick={e => handleNodeClick(emp.id, e)}
+                  style={{ borderLeft: `3px solid ${compColor}`, ...(cardColors[emp.id] ? { backgroundColor: cardColors[emp.id] } : {}) }}
+                  onMouseDown={e => onCardMouseDown(emp.id, e)}
                 >
                   <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white" style={{ backgroundColor: compColor }}>
                     {initials(emp.name)}
@@ -790,6 +1044,7 @@ function OrgTreeView({
                     <span className="text-[8px] text-slate-400 uppercase tracking-wider">Assistant</span>
                   </div>
                 </div>
+                {renderNote(emp.id, ASSIST_W)}
               </div>
             );
           }
@@ -800,6 +1055,7 @@ function OrgTreeView({
               key={emp.id}
               data-empid={emp.id}
               title={employeeStateTooltip(emp)}
+              onMouseDown={e => e.stopPropagation()}
               style={{
                 position: 'absolute',
                 left: ox - NODE_W / 2,
@@ -846,8 +1102,8 @@ function OrgTreeView({
                   isFocal ? 'ring-2 ring-blue-500 shadow-blue-100' :
                   isAncestor ? 'ring-1 ring-slate-300 opacity-80' : ''
                 }`}
-                style={{ borderLeft: `4px solid ${compColor}` }}
-                onClick={e => handleNodeClick(emp.id, e)}
+                style={{ borderLeft: `4px solid ${compColor}`, ...(cardColors[emp.id] ? { backgroundColor: cardColors[emp.id] } : {}) }}
+                onMouseDown={e => onCardMouseDown(emp.id, e)}
               >
                 {/* Top: avatar + name */}
                 <div className="flex items-center gap-2">
@@ -915,6 +1171,7 @@ function OrgTreeView({
                   )}
                 </div>
               </div>
+              {renderNote(emp.id, NODE_W)}
             </div>
           );
         })}
@@ -926,7 +1183,7 @@ function OrgTreeView({
           { label: '+', title: 'Zoom in', action: () => setTransform(t => ({ ...t, scale: Math.min(3, t.scale * 1.2) })) },
           { label: '−', title: 'Zoom out', action: () => setTransform(t => ({ ...t, scale: Math.max(0.15, t.scale / 1.2) })) },
           { label: '⊙', title: 'Center on focal', action: centerOnFocal },
-          { label: '⟲', title: 'Reset card positions', action: () => setOffsets({}) },
+          { label: '⟲', title: 'Reset card positions', action: () => { recordEdit(); setOffsets({}); } },
         ].map(({ label, title, action }) => (
           <button
             key={label}
@@ -937,7 +1194,93 @@ function OrgTreeView({
             {label}
           </button>
         ))}
+        {/* Undo / redo */}
+        <button
+          onClick={doUndo}
+          disabled={!history.canUndo}
+          title="Undo (Ctrl+Z)"
+          className="w-8 h-8 bg-white shadow rounded-lg text-slate-600 hover:bg-slate-50 border border-slate-200 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Undo2 size={15} />
+        </button>
+        <button
+          onClick={doRedo}
+          disabled={!history.canRedo}
+          title="Redo (Ctrl+Shift+Z)"
+          className="w-8 h-8 bg-white shadow rounded-lg text-slate-600 hover:bg-slate-50 border border-slate-200 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Redo2 size={15} />
+        </button>
+        {/* Font control */}
+        <button
+          onClick={() => setFontOpen(o => !o)}
+          title="Chart font (family / size / color)"
+          className={`w-8 h-8 shadow rounded-lg text-sm font-bold border ${
+            fontOpen ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200'
+          }`}
+        >
+          Aa
+        </button>
       </div>
+
+      {/* Font popover */}
+      {fontOpen && (
+        <div
+          className="absolute bottom-4 right-14 z-30 bg-white rounded-xl shadow-lg border border-slate-200 p-3 w-56 text-xs"
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold text-slate-600">Chart font</span>
+            <button onClick={() => setFontOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
+          </div>
+
+          <label className="block text-slate-500 mb-1">Family</label>
+          <select
+            value={font.family ?? ''}
+            onChange={e => { recordEdit(); setFont(f => ({ ...f, family: e.target.value || undefined })); }}
+            className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            <option value="">Default</option>
+            <option value="Inter, system-ui, sans-serif">Inter / Sans</option>
+            <option value="Arial, Helvetica, sans-serif">Arial</option>
+            <option value="'Segoe UI', system-ui, sans-serif">Segoe UI</option>
+            <option value="Georgia, 'Times New Roman', serif">Georgia / Serif</option>
+            <option value="'Courier New', monospace">Monospace</option>
+          </select>
+
+          <label className="block text-slate-500 mb-1">Size · {Math.round((font.scale ?? 1) * 100)}%</label>
+          <input
+            type="range" min={0.7} max={1.6} step={0.05}
+            value={font.scale ?? 1}
+            onChange={e => { recordEdit(); setFont(f => ({ ...f, scale: parseFloat(e.target.value) })); }}
+            className="w-full mb-2"
+          />
+
+          <label className="block text-slate-500 mb-1">Text color</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={font.color ?? '#1e293b'}
+              onChange={e => { recordEdit(); setFont(f => ({ ...f, color: e.target.value })); }}
+              className="w-8 h-7 rounded border border-slate-200 cursor-pointer"
+            />
+            <button
+              onClick={() => { recordEdit(); setFont(f => ({ ...f, color: undefined })); }}
+              className="text-slate-500 hover:text-red-500 px-1.5 py-1 rounded hover:bg-slate-100"
+            >
+              Default color
+            </button>
+          </div>
+
+          <button
+            onClick={() => { recordEdit(); setFont({}); }}
+            className="mt-3 w-full text-slate-500 hover:text-slate-700 border border-slate-200 rounded-md py-1 hover:bg-slate-50"
+          >
+            Reset font
+          </button>
+        </div>
+      )}
 
       {/* Legend */}
       <div className="absolute bottom-4 left-4 bg-white rounded-xl shadow border border-slate-100 p-3 z-20 text-xs space-y-1">
@@ -967,11 +1310,11 @@ function OrgTreeView({
 
       {/* Hint */}
       <div className="absolute top-4 right-4 text-xs text-slate-400 bg-white/80 rounded px-2 py-1 z-20">
-        Scroll · Drag · Click · Shift+Click or Shift+Drag to multi-select · ↑/↓ to navigate
+        Ctrl+Drag pan · Ctrl+Scroll zoom · Drag card to move · Drag canvas to select · Shift+Drag adds · Ctrl+Z undo
       </div>
 
-      {/* Alignment toolbar — visible when 2+ cards are selected */}
-      {selected.size >= 2 && (
+      {/* Selection toolbar — color + note for any selection; alignment for 2+ */}
+      {selected.size >= 1 && (
         <div
           className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-white rounded-xl shadow-lg border border-slate-200 px-2 py-1.5 flex items-center gap-1"
           onMouseDown={e => e.stopPropagation()}
@@ -981,52 +1324,100 @@ function OrgTreeView({
             {selected.size} selected
           </span>
           <span className="w-px h-5 bg-slate-200" />
-          {/* Quick-arrange: stack horizontally or vertically in one click */}
-          {([
-            { mode: 'row',    icon: Rows3,    title: 'Arrange in a horizontal row' },
-            { mode: 'column', icon: Columns3, title: 'Arrange in a vertical column' },
-          ] as const).map(({ mode, icon: Icon, title }) => (
-            <button
-              key={mode}
-              onClick={() => applyAlignment(mode)}
-              title={title}
-              className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-600"
+          {/* Card background color: presets, custom picker, and clear */}
+          <div className="flex items-center gap-1 px-0.5" title="Card background color">
+            {CARD_BG_PRESETS.map(color => (
+              <button
+                key={color}
+                onClick={() => applyCardColor(color)}
+                title={color === '#ffffff' ? 'Default (white)' : color}
+                className="w-5 h-5 rounded-full border border-slate-300 hover:scale-110 transition-transform"
+                style={{ backgroundColor: color }}
+              />
+            ))}
+            <label
+              className="w-6 h-6 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-600 cursor-pointer relative"
+              title="Custom color"
             >
-              <Icon size={14} />
+              <Palette size={14} />
+              <input
+                type="color"
+                onChange={e => applyCardColor(e.target.value)}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              />
+            </label>
+            <button
+              onClick={() => applyCardColor(null)}
+              title="Clear color"
+              className="w-6 h-6 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-red-500"
+            >
+              <Ban size={14} />
             </button>
-          ))}
+          </div>
           <span className="w-px h-5 bg-slate-200" />
-          {([
-            { mode: 'left',    icon: AlignStartVertical,    title: 'Align left edges' },
-            { mode: 'centerH', icon: AlignCenterVertical,   title: 'Align horizontal centers' },
-            { mode: 'right',   icon: AlignEndVertical,      title: 'Align right edges' },
-            { mode: 'top',     icon: AlignStartHorizontal,  title: 'Align top edges' },
-            { mode: 'centerV', icon: AlignCenterHorizontal, title: 'Align vertical centers' },
-            { mode: 'bottom',  icon: AlignEndHorizontal,    title: 'Align bottom edges' },
-          ] as const).map(({ mode, icon: Icon, title }) => (
-            <button
-              key={mode}
-              onClick={() => applyAlignment(mode)}
-              title={title}
-              className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-600"
-            >
-              <Icon size={14} />
-            </button>
-          ))}
-          <span className="w-px h-5 bg-slate-200" />
-          {selected.size >= 3 && ([
-            { mode: 'distH', icon: AlignHorizontalDistributeCenter, title: 'Distribute horizontally' },
-            { mode: 'distV', icon: AlignVerticalDistributeCenter,   title: 'Distribute vertically' },
-          ] as const).map(({ mode, icon: Icon, title }) => (
-            <button
-              key={mode}
-              onClick={() => applyAlignment(mode)}
-              title={title}
-              className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-600"
-            >
-              <Icon size={14} />
-            </button>
-          ))}
+          {/* Add / edit a text note beside the selected card(s) */}
+          <button
+            onClick={addNoteToSelected}
+            title="Add a text note next to the card"
+            className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-600"
+          >
+            <StickyNote size={14} />
+          </button>
+          {selected.size >= 2 && (
+            <>
+              <span className="w-px h-5 bg-slate-200" />
+              {/* Quick-arrange: stack horizontally or vertically in one click */}
+              {([
+                { mode: 'row',    icon: Rows3,    title: 'Arrange in a horizontal row' },
+                { mode: 'column', icon: Columns3, title: 'Arrange in a vertical column' },
+              ] as const).map(({ mode, icon: Icon, title }) => (
+                <button
+                  key={mode}
+                  onClick={() => applyAlignment(mode)}
+                  title={title}
+                  className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-600"
+                >
+                  <Icon size={14} />
+                </button>
+              ))}
+              <span className="w-px h-5 bg-slate-200" />
+              {([
+                { mode: 'left',    icon: AlignStartVertical,    title: 'Align left edges' },
+                { mode: 'centerH', icon: AlignCenterVertical,   title: 'Align horizontal centers' },
+                { mode: 'right',   icon: AlignEndVertical,      title: 'Align right edges' },
+                { mode: 'top',     icon: AlignStartHorizontal,  title: 'Align top edges' },
+                { mode: 'centerV', icon: AlignCenterHorizontal, title: 'Align vertical centers' },
+                { mode: 'bottom',  icon: AlignEndHorizontal,    title: 'Align bottom edges' },
+              ] as const).map(({ mode, icon: Icon, title }) => (
+                <button
+                  key={mode}
+                  onClick={() => applyAlignment(mode)}
+                  title={title}
+                  className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-600"
+                >
+                  <Icon size={14} />
+                </button>
+              ))}
+              {selected.size >= 3 && (
+                <>
+                  <span className="w-px h-5 bg-slate-200" />
+                  {([
+                    { mode: 'distH', icon: AlignHorizontalDistributeCenter, title: 'Distribute horizontally' },
+                    { mode: 'distV', icon: AlignVerticalDistributeCenter,   title: 'Distribute vertically' },
+                  ] as const).map(({ mode, icon: Icon, title }) => (
+                    <button
+                      key={mode}
+                      onClick={() => applyAlignment(mode)}
+                      title={title}
+                      className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center text-slate-600"
+                    >
+                      <Icon size={14} />
+                    </button>
+                  ))}
+                </>
+              )}
+            </>
+          )}
           <span className="w-px h-5 bg-slate-200" />
           <button
             onClick={() => setSelected(new Set())}

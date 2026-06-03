@@ -1,11 +1,36 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { setUserRole, addUser, removeUser, changePassword } from '../store/authSlice';
+import { setUserRole, addUser, removeUser, changePassword, setUserDisabled } from '../store/authSlice';
 import type { RootState } from '../store';
 import type { UserRole } from '../types';
-import { Plus, Trash2, KeyRound, Shield, Eye, Pencil } from 'lucide-react';
+import { Plus, Trash2, KeyRound, Shield, Eye, EyeOff, Pencil, X, Sparkles, Lock, Unlock } from 'lucide-react';
+
+function generatePassword(length = 12): string {
+  const lowers = 'abcdefghijkmnopqrstuvwxyz';
+  const uppers = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  const symbols = '!@#$%&*+-?';
+  const all = lowers + uppers + digits + symbols;
+  // Ensure at least one of each character class.
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+  const required = [pick(lowers), pick(uppers), pick(digits), pick(symbols)];
+  const rest = Array.from({ length: Math.max(0, length - required.length) }, () => pick(all));
+  return [...required, ...rest].sort(() => Math.random() - 0.5).join('');
+}
+
+function suggestUsername(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9 ]+/g, '')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .join('.');
+}
 
 const ROLE_STYLES: Record<UserRole, string> = {
   ADMIN:  'bg-purple-100 text-purple-700',
@@ -23,17 +48,46 @@ export default function UsersPage() {
   const { isAdmin, currentUser } = useAuth();
   const dispatch = useDispatch();
   const users = useSelector((s: RootState) => s.auth.users);
+  const employees = useSelector((s: RootState) => s.employees.list);
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [pickedEmpId, setPickedEmpId] = useState<string | null>(null);
+  const [empSearch, setEmpSearch] = useState('');
   const [newUser, setNewUser] = useState('');
   const [newPass, setNewPass] = useState('');
+  const [showNewPass, setShowNewPass] = useState(false);
   const [newRole, setNewRole] = useState<UserRole>('VIEWER');
-  const [newEmpId, setNewEmpId] = useState('');
   const [addError, setAddError] = useState('');
 
+  const pickedEmployee = pickedEmpId ? employees.find(e => e.id === pickedEmpId) : null;
+
+  // Employees who don't already have a user account (matched by empId)
+  const takenEmpIds = useMemo(() => new Set(users.map(u => u.empId).filter(Boolean)), [users]);
+  const availableEmployees = useMemo(
+    () => employees.filter(e => e.empId && !takenEmpIds.has(e.empId)),
+    [employees, takenEmpIds]
+  );
+  const filteredEmployees = useMemo(() => {
+    const q = empSearch.trim().toLowerCase();
+    if (!q) return [];
+    return availableEmployees
+      .filter(e =>
+        e.name.toLowerCase().includes(q) ||
+        e.empId.includes(q) ||
+        e.designation.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  }, [availableEmployees, empSearch]);
+
+  const resetAddForm = () => {
+    setPickedEmpId(null); setEmpSearch('');
+    setNewUser(''); setNewPass(''); setShowNewPass(false); setNewRole('VIEWER'); setAddError('');
+  };
+
   const [changePwFor, setChangePwFor] = useState<string | null>(null);
+  const [changePwReason, setChangePwReason] = useState<string>('');
   const [newPwValue, setNewPwValue] = useState('');
+  const [showPwValue, setShowPwValue] = useState(false);
 
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
@@ -43,18 +97,20 @@ export default function UsersPage() {
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || !newUser.trim() || !newPass.trim()) { setAddError('All fields required.'); return; }
+    if (!pickedEmployee)      { setAddError('Pick an employee.');                return; }
+    if (!newUser.trim())      { setAddError('Username is required.');            return; }
+    if (!newPass.trim())      { setAddError('Password is required.');            return; }
     if (users.find(u => u.username === newUser.trim())) { setAddError('Username already taken.'); return; }
     dispatch(addUser({
       id: `u${Date.now()}`,
       username: newUser.trim(),
       password: newPass,
-      name: newName.trim(),
-      empId: newEmpId.trim() || undefined,
+      name: pickedEmployee.name,
+      empId: pickedEmployee.empId,
       role: newRole,
     }));
     setShowAdd(false);
-    setNewName(''); setNewUser(''); setNewPass(''); setNewEmpId(''); setNewRole('VIEWER'); setAddError('');
+    resetAddForm();
   };
 
   const handleRemove = (id: string) => {
@@ -69,7 +125,23 @@ export default function UsersPage() {
     const target = users.find(u => u.id === userId);
     if (!target) return;
     if (target.role === 'ADMIN' && role !== 'ADMIN' && adminCount <= 1) return;
+    const promotingToAdmin = target.role !== 'ADMIN' && role === 'ADMIN';
     dispatch(setUserRole({ userId, role }));
+    // Security: when granting ADMIN, require the granting admin to set a new password.
+    if (promotingToAdmin) {
+      setChangePwFor(userId);
+      setChangePwReason(`Set a new password for the new admin (${target.name}).`);
+      setNewPwValue('');
+      setShowPwValue(false);
+    }
+  };
+
+  const toggleDisabled = (userId: string) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return;
+    // Don't lock out the last remaining admin.
+    if (target.role === 'ADMIN' && !target.disabled && adminCount <= 1) return;
+    dispatch(setUserDisabled({ userId, disabled: !target.disabled }));
   };
 
   const handlePasswordChange = (e: React.FormEvent) => {
@@ -77,7 +149,9 @@ export default function UsersPage() {
     if (!newPwValue.trim() || !changePwFor) return;
     dispatch(changePassword({ userId: changePwFor, password: newPwValue.trim() }));
     setChangePwFor(null);
+    setChangePwReason('');
     setNewPwValue('');
+    setShowPwValue(false);
   };
 
   return (
@@ -116,7 +190,7 @@ export default function UsersPage() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-100">
             <tr>
-              {['Name', 'Username', 'Emp ID', 'Role', 'Actions'].map(h => (
+              {['Name', 'Username', 'Emp ID', 'Role', 'Status', 'Actions'].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -126,7 +200,7 @@ export default function UsersPage() {
               const isSelf = u.id === currentUser?.id;
               const isLastAdmin = u.role === 'ADMIN' && adminCount <= 1;
               return (
-                <tr key={u.id} className={`hover:bg-slate-50 ${isSelf ? 'bg-blue-50/40' : ''}`}>
+                <tr key={u.id} className={`hover:bg-slate-50 ${isSelf ? 'bg-blue-50/40' : ''} ${u.disabled ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-semibold text-xs">
@@ -151,14 +225,34 @@ export default function UsersPage() {
                     </select>
                   </td>
                   <td className="px-4 py-3">
+                    {u.disabled ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-red-100 text-red-700">
+                        <Lock size={10} /> Disabled
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">
+                        Active
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => { setChangePwFor(u.id); setNewPwValue(''); }}
+                        onClick={() => { setChangePwFor(u.id); setChangePwReason(''); setNewPwValue(''); setShowPwValue(false); }}
                         className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"
                         title="Change password"
                       >
                         <KeyRound size={14} />
                       </button>
+                      {!isSelf && !(isLastAdmin && !u.disabled) && (
+                        <button
+                          onClick={() => toggleDisabled(u.id)}
+                          className={`p-1.5 rounded-lg ${u.disabled ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`}
+                          title={u.disabled ? 'Re-enable login' : 'Disable login'}
+                        >
+                          {u.disabled ? <Unlock size={14} /> : <Lock size={14} />}
+                        </button>
+                      )}
                       {!isSelf && !isLastAdmin && (
                         <button
                           onClick={() => setConfirmRemove(u.id)}
@@ -181,27 +275,106 @@ export default function UsersPage() {
       {showAdd && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-sm mx-4">
-            <h3 className="font-semibold text-slate-800 mb-4">New User Account</h3>
+            <h3 className="font-semibold text-slate-800 mb-1">New User Account</h3>
+            <p className="text-xs text-slate-400 mb-4">Pick an employee, then set their login.</p>
             <form onSubmit={handleAdd} className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Full Name</label>
-                <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={newName} onChange={e => setNewName(e.target.value)} placeholder="John Smith" />
+                <label className="text-xs font-medium text-slate-600 block mb-1">Employee *</label>
+                {pickedEmployee ? (
+                  <div className="flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{pickedEmployee.name}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        #{pickedEmployee.empId} · {pickedEmployee.designation}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setPickedEmpId(null); setEmpSearch(''); }}
+                      className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+                      title="Change employee"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Search name, employee ID, designation..."
+                      value={empSearch}
+                      onChange={e => setEmpSearch(e.target.value)}
+                      autoFocus
+                    />
+                    {empSearch && filteredEmployees.length > 0 && (
+                      <div className="absolute z-10 left-0 right-0 top-full mt-1 border border-slate-200 rounded-lg bg-white shadow-lg max-h-48 overflow-y-auto">
+                        {filteredEmployees.map(e => (
+                          <button
+                            key={e.id}
+                            type="button"
+                            onClick={() => {
+                              setPickedEmpId(e.id);
+                              setEmpSearch('');
+                              if (!newUser.trim()) setNewUser(suggestUsername(e.name));
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                          >
+                            <div className="flex items-baseline gap-2">
+                              <span className="font-medium text-slate-800">{e.name}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">#{e.empId}</span>
+                            </div>
+                            <span className="text-xs text-slate-500">{e.designation}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {empSearch && filteredEmployees.length === 0 && (
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        No matching employees (all matches may already have a user account).
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Username</label>
+                <label className="text-xs font-medium text-slate-600 block mb-1">Username *</label>
                 <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={newUser} onChange={e => setNewUser(e.target.value)} placeholder="john.smith" />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Password</label>
-                <input type="password" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="••••••••" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Emp ID (optional)</label>
-                <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={newEmpId} onChange={e => setNewEmpId(e.target.value)} placeholder="10XXX" />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-600">Password *</label>
+                  <button
+                    type="button"
+                    onClick={() => { setNewPass(generatePassword()); setShowNewPass(true); }}
+                    className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700"
+                    title="Generate a strong random password"
+                  >
+                    <Sparkles size={11} /> Generate
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    className="w-full border border-slate-200 rounded-lg pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newPass}
+                    onChange={e => setNewPass(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPass(s => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    title={showNewPass ? 'Hide password' : 'Show password'}
+                  >
+                    {showNewPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                {newRole === 'ADMIN' && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    Admin accounts have full access — choose a strong password.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-600 block mb-1">Role</label>
@@ -214,7 +387,7 @@ export default function UsersPage() {
               </div>
               {addError && <p className="text-xs text-red-500">{addError}</p>}
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => { setShowAdd(false); setAddError(''); }} className="flex-1 border border-slate-300 rounded-lg py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="button" onClick={() => { setShowAdd(false); resetAddForm(); }} className="flex-1 border border-slate-300 rounded-lg py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
                 <button type="submit" className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700">Create</button>
               </div>
             </form>
@@ -227,18 +400,48 @@ export default function UsersPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-sm mx-4">
             <h3 className="font-semibold text-slate-800 mb-1">Change Password</h3>
-            <p className="text-xs text-slate-400 mb-4">For: {users.find(u => u.id === changePwFor)?.name}</p>
+            <p className="text-xs text-slate-400 mb-1">For: {users.find(u => u.id === changePwFor)?.name}</p>
+            {changePwReason && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 mb-3">
+                {changePwReason}
+              </p>
+            )}
             <form onSubmit={handlePasswordChange} className="space-y-3">
-              <input
-                type="password"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="New password"
-                value={newPwValue}
-                onChange={e => setNewPwValue(e.target.value)}
-                autoFocus
-              />
+              <div className="flex items-center justify-end -mb-1">
+                <button
+                  type="button"
+                  onClick={() => { setNewPwValue(generatePassword()); setShowPwValue(true); }}
+                  className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700"
+                >
+                  <Sparkles size={11} /> Generate
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPwValue ? 'text' : 'password'}
+                  className="w-full border border-slate-200 rounded-lg pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="New password"
+                  value={newPwValue}
+                  onChange={e => setNewPwValue(e.target.value)}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwValue(s => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  title={showPwValue ? 'Hide password' : 'Show password'}
+                >
+                  {showPwValue ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
               <div className="flex gap-3">
-                <button type="button" onClick={() => setChangePwFor(null)} className="flex-1 border border-slate-300 rounded-lg py-2 text-sm hover:bg-slate-50">Cancel</button>
+                <button
+                  type="button"
+                  onClick={() => { setChangePwFor(null); setChangePwReason(''); setNewPwValue(''); setShowPwValue(false); }}
+                  className="flex-1 border border-slate-300 rounded-lg py-2 text-sm hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
                 <button type="submit" className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700">Save</button>
               </div>
             </form>

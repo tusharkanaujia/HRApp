@@ -480,7 +480,7 @@ export const seedEmployees: Employee[] = [
     company: 'Ancient Builders Constructions LLC',
     designation: 'HSE Officer', department: 'HSE',
     division: 'CIVIL', managerId: 'e055', projectIds: ['p01'],
-    status: 'ON_VACATION', staffType: 'STAFF', nationality: 'Indian', doj: '2018-03-01',
+    status: 'ACTIVE', staffType: 'STAFF', nationality: 'Indian', doj: '2018-03-01',
   },
   {
     id: 'e058', empId: '10058', name: 'Ashraful Islam',

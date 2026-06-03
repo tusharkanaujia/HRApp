@@ -3,6 +3,7 @@ import employeesReducer from './employeesSlice';
 import projectsReducer from './projectsSlice';
 import projectLayoutsReducer from './projectLayoutsSlice';
 import appearanceReducer from './appearanceSlice';
+import corporateChartReducer from './corporateChartSlice';
 import authReducer from './authSlice';
 import activityReducer from './activitySlice';
 import { firestoreMiddleware } from '../lib/firestoreSync';
@@ -13,6 +14,7 @@ export const store = configureStore({
     projects:       projectsReducer,
     projectLayouts: projectLayoutsReducer,
     appearance:     appearanceReducer,
+    corporateChart: corporateChartReducer,
     auth:           authReducer,
     activity:       activityReducer,
   },

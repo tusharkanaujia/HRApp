@@ -1,16 +1,13 @@
-import { useState, useMemo } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useSelector } from 'react-redux';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { RootState } from '../store';
-import { deleteEmployee } from '../store/employeesSlice';
-import type { Employee } from '../types';
 import AddEmployeeModal from '../components/AddEmployeeModal';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
-import { addActivity } from '../store/activitySlice';
-import { makeActivity } from '../utils/activityHelpers';
-import { Plus, Search, Trash2, GitBranch, ChevronLeft, ChevronRight, Pencil, FileDown } from 'lucide-react';
+import { Plus, Search, ChevronLeft, ChevronRight, FileDown } from 'lucide-react';
 import { exportEmployeesToExcel } from '../utils/exportExcel';
+import { employeeStateTooltip } from '../utils/termination';
 
 const PAGE_SIZE = 50;
 
@@ -30,20 +27,27 @@ function companyShort(c: string) {
 }
 
 export default function EmployeesPage() {
-  const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { canEdit, currentUser } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { canEdit } = useAuth();
   const employees = useSelector((s: RootState) => s.employees.list);
   const [showModal, setShowModal] = useState(false);
-  const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [query, setQuery] = useState('');
-  const [filterDept, setFilterDept] = useState('');
+  const [filterDept, setFilterDept] = useState(searchParams.get('dept') ?? '');
   const [filterCompany, setFilterCompany] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState(searchParams.get('status') ?? '');
   const [filterDivision, setFilterDivision] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+
+  // Keep URL in sync so links from dashboard land on the right filters
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (filterDept)   next.set('dept',   filterDept);   else next.delete('dept');
+    if (filterStatus) next.set('status', filterStatus); else next.delete('status');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterDept, filterStatus]);
 
   // Derive unique filter options from actual data
   const departments = useMemo(() => {
@@ -79,13 +83,6 @@ export default function EmployeesPage() {
   const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const resetPage = () => setPage(1);
-
-  const handleDelete = (id: string) => {
-    const emp = employees.find(e => e.id === id);
-    dispatch(deleteEmployee(id));
-    if (emp) dispatch(addActivity(makeActivity('DELETE_EMPLOYEE', 'employee', id, emp.name, currentUser)));
-    setConfirmDelete(null);
-  };
 
   const handleExport = () => {
     const managerNameById = new Map(employees.map(e => [e.id, e.name]));
@@ -169,7 +166,7 @@ export default function EmployeesPage() {
           onChange={e => { setFilterStatus(e.target.value); resetPage(); }}
         >
           <option value="">All Statuses</option>
-          {['ACTIVE', 'INACTIVE', 'ON_VACATION', 'RESIGNED', 'VACANT'].map(s => (
+          {['ACTIVE', 'ONBOARDING', 'INACTIVE', 'RESIGNED', 'TERMINATED', 'ABSCONDED'].map(s => (
             <option key={s} value={s}>{s.replace('_', ' ')}</option>
           ))}
         </select>
@@ -180,28 +177,30 @@ export default function EmployeesPage() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-100">
             <tr>
-              {['ID', 'Name', 'Designation', 'Department', 'Location', 'Company', 'Division', 'Status', 'Actions'].map(h => (
+              {['ID', 'Name', 'Designation', 'Department', 'Location', 'Company', 'Division', 'Status', 'Start Date'].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {paginated.map(emp => (
-              <tr key={emp.id} className="hover:bg-slate-50 group">
+              <tr
+                key={emp.id}
+                onClick={() => navigate(`/employees/${emp.id}`)}
+                className="hover:bg-slate-50 cursor-pointer"
+                title={employeeStateTooltip(emp)}
+              >
                 <td className="px-4 py-3 text-slate-400 font-mono text-xs">{emp.empId}</td>
                 <td className="px-4 py-3">
-                  <button
-                    onClick={() => navigate(`/employees/${emp.id}`)}
-                    className="flex items-center gap-2 text-left hover:text-blue-600 group/name"
-                  >
+                  <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold text-xs flex-shrink-0">
                       {emp.name.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-medium text-slate-800 group-hover/name:text-blue-600">{emp.name}</p>
+                      <p className="font-medium text-slate-800">{emp.name}</p>
                       <p className="text-xs text-slate-400">{emp.nationality}</p>
                     </div>
-                  </button>
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-slate-600 max-w-40 truncate">{emp.designation}</td>
                 <td className="px-4 py-3 text-slate-500 max-w-36 truncate">{emp.department}</td>
@@ -217,35 +216,7 @@ export default function EmployeesPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3"><StatusBadge status={emp.status} /></td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => navigate(`/org-chart?emp=${emp.id}`)}
-                      className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
-                      title="View org chart"
-                    >
-                      <GitBranch size={14} />
-                    </button>
-                    {canEdit && (
-                      <button
-                        onClick={() => setEditEmployee(emp)}
-                        className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg"
-                        title="Edit employee"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                    )}
-                    {canEdit && (
-                      <button
-                        onClick={() => setConfirmDelete(emp.id)}
-                        className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
-                        title="Delete"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                </td>
+                <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{emp.doj || <span className="text-slate-300">—</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -281,26 +252,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Delete confirm */}
-      {confirmDelete && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4">
-            <h3 className="font-semibold text-slate-800 mb-2">Delete Employee?</h3>
-            <p className="text-sm text-slate-500 mb-6">
-              This will remove <strong>{employees.find((e: Employee) => e.id === confirmDelete)?.name}</strong> and unlink their direct reports.
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="flex-1 border border-slate-300 rounded-lg py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="flex-1 bg-red-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-red-600">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {showModal && <AddEmployeeModal onClose={() => setShowModal(false)} />}
-      {editEmployee && (
-        <AddEmployeeModal employee={editEmployee} onClose={() => setEditEmployee(null)} />
-      )}
     </div>
   );
 }

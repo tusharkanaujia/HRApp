@@ -1,19 +1,19 @@
-import { useState, useMemo } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useEffect, useState, useMemo } from 'react';
+import { useSelector } from 'react-redux';
 import type { RootState } from '../store';
-import { clearActivity } from '../store/activitySlice';
-import { useAuth } from '../hooks/useAuth';
 import type { ActivityAction } from '../types';
-import { Trash2, Filter } from 'lucide-react';
+import { Filter } from 'lucide-react';
+import { useActivityBadge } from '../hooks/useActivityBadge';
 
 const ACTION_META: Record<ActivityAction, { label: string; color: string }> = {
-  ADD_EMPLOYEE:     { label: 'Added Employee',     color: 'bg-emerald-100 text-emerald-700' },
-  EDIT_EMPLOYEE:    { label: 'Edited Employee',    color: 'bg-blue-100 text-blue-700' },
-  DELETE_EMPLOYEE:  { label: 'Deleted Employee',   color: 'bg-red-100 text-red-600' },
-  CHANGE_HIERARCHY: { label: 'Changed Hierarchy',  color: 'bg-purple-100 text-purple-700' },
-  ADD_PROJECT:      { label: 'Added Project',      color: 'bg-teal-100 text-teal-700' },
-  EDIT_PROJECT:     { label: 'Edited Project',     color: 'bg-sky-100 text-sky-700' },
-  DELETE_PROJECT:   { label: 'Deleted Project',    color: 'bg-orange-100 text-orange-700' },
+  ADD_EMPLOYEE:       { label: 'Added Employee',     color: 'bg-emerald-100 text-emerald-700' },
+  EDIT_EMPLOYEE:      { label: 'Edited Employee',    color: 'bg-blue-100 text-blue-700' },
+  DELETE_EMPLOYEE:    { label: 'Deleted Employee',   color: 'bg-red-100 text-red-600' },
+  CHANGE_HIERARCHY:   { label: 'Changed Hierarchy',  color: 'bg-purple-100 text-purple-700' },
+  TERMINATE_EMPLOYEE: { label: 'Terminated Employee', color: 'bg-red-600 text-white' },
+  ADD_PROJECT:        { label: 'Added Project',      color: 'bg-teal-100 text-teal-700' },
+  EDIT_PROJECT:       { label: 'Edited Project',     color: 'bg-sky-100 text-sky-700' },
+  DELETE_PROJECT:     { label: 'Deleted Project',    color: 'bg-orange-100 text-orange-700' },
 };
 
 function formatTime(iso: string) {
@@ -22,13 +22,19 @@ function formatTime(iso: string) {
 }
 
 export default function ActivityPage() {
-  const dispatch = useDispatch();
-  const { isAdmin } = useAuth();
   const log = useSelector((s: RootState) => s.activity.log);
+  const { markSeen } = useActivityBadge();
+
+  // Clear the unread badge whenever the user opens this page or new activity
+  // lands while they're viewing it.
+  useEffect(() => { markSeen(); }, [markSeen, log.length]);
 
   const [filterAction, setFilterAction] = useState('');
   const [filterUser, setFilterUser] = useState('');
-  const [filterDate, setFilterDate] = useState('');
+  const [filterEntity, setFilterEntity] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [query, setQuery] = useState('');
 
   const users = useMemo(() => {
     const s = new Set(log.map(e => e.userName));
@@ -36,66 +42,103 @@ export default function ActivityPage() {
   }, [log]);
 
   const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
     return log.filter(entry => {
       const matchAction = !filterAction || entry.action === filterAction;
       const matchUser = !filterUser || entry.userName === filterUser;
-      const matchDate = !filterDate || entry.timestamp.startsWith(filterDate);
-      return matchAction && matchUser && matchDate;
+      const matchEntity = !filterEntity || entry.entityType === filterEntity;
+      const day = entry.timestamp.slice(0, 10);
+      const matchFrom = !dateFrom || day >= dateFrom;
+      const matchTo = !dateTo || day <= dateTo;
+      const matchQ = !q ||
+        entry.entityName.toLowerCase().includes(q) ||
+        (entry.details ?? '').toLowerCase().includes(q);
+      return matchAction && matchUser && matchEntity && matchFrom && matchTo && matchQ;
     });
-  }, [log, filterAction, filterUser, filterDate]);
+  }, [log, filterAction, filterUser, filterEntity, dateFrom, dateTo, query]);
+
+  const anyFilter = filterAction || filterUser || filterEntity || dateFrom || dateTo || query;
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-8 max-w-5xl">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Activity Log</h1>
           <p className="text-slate-400 text-sm mt-0.5">{filtered.length} of {log.length} entries</p>
         </div>
-        {isAdmin && log.length > 0 && (
-          <button
-            onClick={() => dispatch(clearActivity())}
-            className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 border border-red-200 hover:border-red-300 px-3 py-2 rounded-lg"
-          >
-            <Trash2 size={14} /> Clear all
-          </button>
-        )}
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 mb-6 flex gap-3 flex-wrap items-center">
-        <Filter size={14} className="text-slate-400" />
-        <select
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
-          value={filterAction}
-          onChange={e => setFilterAction(e.target.value)}
-        >
-          <option value="">All Actions</option>
-          {(Object.keys(ACTION_META) as ActivityAction[]).map(a => (
-            <option key={a} value={a}>{ACTION_META[a].label}</option>
-          ))}
-        </select>
-        <select
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
-          value={filterUser}
-          onChange={e => setFilterUser(e.target.value)}
-        >
-          <option value="">All Users</option>
-          {users.map(u => <option key={u}>{u}</option>)}
-        </select>
-        <input
-          type="date"
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
-          value={filterDate}
-          onChange={e => setFilterDate(e.target.value)}
-        />
-        {(filterAction || filterUser || filterDate) && (
-          <button
-            onClick={() => { setFilterAction(''); setFilterUser(''); setFilterDate(''); }}
-            className="text-xs text-slate-400 hover:text-slate-600"
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 mb-6 space-y-3">
+        <div className="flex items-center gap-2">
+          <Filter size={14} className="text-slate-400" />
+          <input
+            className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Search entity or details..."
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-3 flex-wrap items-center">
+          <select
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+            value={filterAction}
+            onChange={e => setFilterAction(e.target.value)}
           >
-            Clear filters
-          </button>
-        )}
+            <option value="">All Actions</option>
+            {(Object.keys(ACTION_META) as ActivityAction[]).map(a => (
+              <option key={a} value={a}>{ACTION_META[a].label}</option>
+            ))}
+          </select>
+          <select
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+            value={filterEntity}
+            onChange={e => setFilterEntity(e.target.value)}
+          >
+            <option value="">All Entities</option>
+            <option value="employee">Employees</option>
+            <option value="project">Projects</option>
+          </select>
+          <select
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+            value={filterUser}
+            onChange={e => setFilterUser(e.target.value)}
+          >
+            <option value="">All Users</option>
+            {users.map(u => <option key={u}>{u}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            From
+            <input
+              type="date"
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              max={dateTo || undefined}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            To
+            <input
+              type="date"
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              value={dateTo}
+              onChange={e => setDateTo(e.target.value)}
+              min={dateFrom || undefined}
+            />
+          </label>
+          {anyFilter && (
+            <button
+              onClick={() => {
+                setFilterAction(''); setFilterUser(''); setFilterEntity('');
+                setDateFrom(''); setDateTo(''); setQuery('');
+              }}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Timeline */}

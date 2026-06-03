@@ -1,11 +1,17 @@
 import { useState, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import type { RootState } from '../store';
 import { addEmployee, updateEmployee } from '../store/employeesSlice';
 import { addActivity } from '../store/activitySlice';
+import { disableUserByEmpId } from '../store/authSlice';
 import { makeActivity, employeeChanges } from '../utils/activityHelpers';
 import { useAuth } from '../hooks/useAuth';
+import { nextEmpId } from '../utils/nextEmpId';
 import type { Employee, Division, EmployeeStatus, StaffType } from '../types';
+
+const ENDED: EmployeeStatus[] = ['TERMINATED', 'RESIGNED', 'ABSCONDED'];
+const isEndedStatus = (s: EmployeeStatus) => ENDED.includes(s);
 import { X } from 'lucide-react';
 
 interface Props {
@@ -15,18 +21,22 @@ interface Props {
 
 export default function AddEmployeeModal({ onClose, employee }: Props) {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const employees = useSelector((s: RootState) => s.employees.list);
   const projects = useSelector((s: RootState) => s.projects.list);
 
   const isEdit = !!employee;
+  const today = new Date().toISOString().slice(0, 10);
 
   const companies   = useMemo(() => [...new Set(employees.map(e => e.company).filter(Boolean))].sort(), [employees]);
   const departments = useMemo(() => [...new Set(employees.map(e => e.department).filter(Boolean))].sort(), [employees]);
 
+  const defaultEmpId = useMemo(() => (isEdit ? (employee?.empId ?? '') : nextEmpId(employees)), [employees, employee, isEdit]);
+
   const [form, setForm] = useState({
     name:           employee?.name           ?? '',
-    empId:          employee?.empId          ?? '',
+    empId:          employee?.empId          ?? defaultEmpId,
     company:        employee?.company        ?? 'Ancient Builders Constructions LLC',
     designation:    employee?.designation    ?? '',
     department:     employee?.department     ?? '',
@@ -37,10 +47,11 @@ export default function AddEmployeeModal({ onClose, employee }: Props) {
     status:         employee?.status         ?? ('ACTIVE' as EmployeeStatus),
     staffType:      employee?.staffType      ?? ('STAFF' as StaffType),
     nationality:    employee?.nationality    ?? '',
-    doj:            employee?.doj            ?? '',
+    doj:            employee?.doj            ?? today,
     shift:          employee?.shift          ?? '',
     accommodation:  employee?.accommodation  ?? '',
     passportNumber: employee?.passportNumber ?? '',
+    photoUrl:       employee?.photoUrl       ?? '',
     remarks:        employee?.remarks        ?? '',
   });
 
@@ -68,10 +79,19 @@ export default function AddEmployeeModal({ onClose, employee }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // For new employees, derive status from DOJ — future date = ONBOARDING,
+    // today or past = ACTIVE. Editing keeps the chosen status.
+    const derivedStatus: EmployeeStatus = isEdit
+      ? form.status
+      : (form.doj && form.doj > today ? 'ONBOARDING' : 'ACTIVE');
+
     const emp: Employee = {
+      ...(employee ?? {}),
       ...form,
+      status:    derivedStatus,
       id:        isEdit ? employee!.id : `e${Date.now()}`,
       managerId: form.managerId || null,
+      photoUrl:  form.photoUrl.trim() || undefined, // drop when blank — stripUndefined omits it on write
     };
 
     if (isEdit && employee) {
@@ -85,11 +105,26 @@ export default function AddEmployeeModal({ onClose, employee }: Props) {
           : 'EDIT_EMPLOYEE' as const;
         dispatch(addActivity(makeActivity(action, 'employee', emp.id, emp.name, currentUser, changes.join(' · '))));
       }
+      // Mirror login enable/disable when status crosses the active/ended boundary
+      if (emp.empId && employee.status !== emp.status) {
+        const wasEnded = isEndedStatus(employee.status);
+        const nowEnded = isEndedStatus(emp.status);
+        if (!wasEnded && nowEnded) {
+          dispatch(disableUserByEmpId({ empId: emp.empId, disabled: true }));
+        } else if (wasEnded && !nowEnded) {
+          dispatch(disableUserByEmpId({ empId: emp.empId, disabled: false }));
+        }
+      }
+      onClose();
     } else {
       dispatch(addEmployee(emp));
-      dispatch(addActivity(makeActivity('ADD_EMPLOYEE', 'employee', emp.id, emp.name, currentUser)));
+      const joinDetail = emp.doj
+        ? (emp.doj > today ? `Joins ${emp.doj} · status ${derivedStatus}` : `Status ${derivedStatus}`)
+        : undefined;
+      dispatch(addActivity(makeActivity('ADD_EMPLOYEE', 'employee', emp.id, emp.name, currentUser, joinDetail)));
+      onClose();
+      navigate(`/employees/${emp.id}`);
     }
-    onClose();
   };
 
   const labelCls = 'block text-xs font-medium text-slate-600 mb-1';
@@ -117,7 +152,8 @@ export default function AddEmployeeModal({ onClose, employee }: Props) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
           {/* Name + ID */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -161,16 +197,25 @@ export default function AddEmployeeModal({ onClose, employee }: Props) {
             </div>
           </div>
 
-          {/* Status + Staff Type */}
+          {/* Status (edit only) + Staff Type */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelCls}>Status</label>
-              <select className={inputCls} value={form.status} onChange={set('status')}>
-                {(['ACTIVE', 'INACTIVE', 'ON_VACATION', 'RESIGNED', 'VACANT'] as EmployeeStatus[]).map(s => (
-                  <option key={s} value={s}>{s.replace('_', ' ')}</option>
-                ))}
-              </select>
-            </div>
+            {isEdit ? (
+              <div>
+                <label className={labelCls}>Status</label>
+                <select className={inputCls} value={form.status} onChange={set('status')}>
+                  {(['ACTIVE', 'ONBOARDING', 'INACTIVE', 'RESIGNED', 'TERMINATED', 'ABSCONDED'] as EmployeeStatus[]).map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className={labelCls}>Auto Status</label>
+                <p className="text-sm text-slate-600 border border-slate-200 bg-slate-50 rounded-lg px-3 py-2">
+                  {form.doj && form.doj > today ? 'Onboarding (joins later)' : 'Active (joins today)'}
+                </p>
+              </div>
+            )}
             <div>
               <label className={labelCls}>Staff Type</label>
               <select className={inputCls} value={form.staffType} onChange={set('staffType')}>
@@ -230,8 +275,14 @@ export default function AddEmployeeModal({ onClose, employee }: Props) {
               <input className={inputCls} value={form.nationality} onChange={set('nationality')} />
             </div>
             <div>
-              <label className={labelCls}>Date of Joining</label>
-              <input type="date" className={inputCls} value={form.doj} onChange={set('doj')} />
+              <label className={labelCls}>Start Date {isEdit ? '' : '*'}</label>
+              <input
+                type="date"
+                required={!isEdit}
+                className={inputCls}
+                value={form.doj}
+                onChange={set('doj')}
+              />
             </div>
           </div>
 
@@ -277,29 +328,47 @@ export default function AddEmployeeModal({ onClose, employee }: Props) {
             </div>
           </div>
 
+          {/* Photo URL */}
+          <div>
+            <label className={labelCls}>Photo URL</label>
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 bg-center bg-cover flex-shrink-0"
+                style={form.photoUrl ? { backgroundImage: `url("${form.photoUrl}")` } : undefined}
+              />
+              <input
+                className={inputCls}
+                value={form.photoUrl}
+                onChange={set('photoUrl')}
+                placeholder="https://… (headshot shown in the Corporate org chart)"
+              />
+            </div>
+          </div>
+
           {/* Remarks */}
           <div>
             <label className={labelCls}>Remarks</label>
             <textarea className={inputCls} rows={2} value={form.remarks} onChange={set('remarks')} />
           </div>
-        </form>
+          </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t flex gap-3 justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit as unknown as React.MouseEventHandler}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-          >
-            {isEdit ? 'Save Changes' : 'Add Employee'}
-          </button>
-        </div>
+          {/* Footer */}
+          <div className="px-6 py-4 border-t flex gap-3 justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+            >
+              {isEdit ? 'Save Changes' : 'Add Employee'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
