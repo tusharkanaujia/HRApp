@@ -26,3 +26,7 @@ dist-ssr
 # Firebase
 .firebase/
 *.log
+
+# Scratch / verification harnesses (local screenshots & one-off check scripts)
+verify-*.mjs
+verify-shots*/
