@@ -13,24 +13,24 @@ import {
 } from '../store/corporateChartSlice';
 import type { CorporateAddedCard, CorporateChartConfig } from '../types';
 
-// Sections new cards can be added to, with the wrapper/stub + card style each
-// uses so an added card matches its neighbours.
-const SECTIONS: { id: string; label: string; variant: string; wrap: string; stub: string; width: number }[] = [
-  { id: 'ed-depts',  label: 'ED · Departments',        variant: 'cv-dept', wrap: 'plain', stub: '',    width: 0   },
-  { id: 'ceo-depts', label: 'CEO · Departments',       variant: 'cv-dept', wrap: 'cd',    stub: 'cdv', width: 84  },
-  { id: 'ops-pd',    label: 'Ops · Project Directors', variant: 'cv-pd',   wrap: 'cpd',   stub: 'pdv', width: 104 },
-  { id: 'ops-pm',    label: 'Ops · Project Managers',  variant: 'cv-pm',   wrap: 'cpm',   stub: 'pmv', width: 112 },
-  { id: 'ops-dh',    label: 'Ops · Dept. Heads',       variant: 'cv-dh',   wrap: 'cdh',   stub: 'dhv', width: 160 },
+// Sections new cards can be added to. `variant` is the card style; `width` is
+// the fallback card width (the photo-card layout uses a uniform width).
+const SECTIONS: { id: string; label: string; variant: string; width: number }[] = [
+  { id: 'ed-depts',  label: 'ED · Departments',        variant: 'cv-dept', width: 124 },
+  { id: 'ceo-depts', label: 'CEO · Departments',       variant: 'cv-dept', width: 124 },
+  { id: 'ops-pd',    label: 'Ops · Project Directors', variant: 'cv-pd',   width: 124 },
+  { id: 'ops-pm',    label: 'Ops · Project Managers',  variant: 'cv-pm',   width: 124 },
+  { id: 'ops-dh',    label: 'Ops · Dept. Heads',       variant: 'cv-dh',   width: 124 },
 ];
 
-// Base connector set (parent card key → child card key), matching the A3.
+// Base connector set (parent card key → child card key), matching the org.
 // Keys are the cards' data-card / data-emp ids. 'side' edges are the dashed
-// PA/secretary links drawn horizontally.
+// PA/secretary links.
 const BASE_EDGES: { from: string; to: string; type?: 'normal' | 'side' }[] = [
   { from: 'ecorp13', to: 'e60', type: 'side' },   // Board → PA Malak
   { from: 'ecorp13', to: 'e351' },                // Board → ED
   { from: 'ecorp13', to: 'ecorp01' },             // Board → CEO
-  { from: 'ecorp13', to: 'ecorp02' },             // Board → Ops (A3 bridge)
+  { from: 'ecorp13', to: 'ecorp02' },             // Board → Ops
   // ED
   { from: 'e351', to: 'e97', type: 'side' },      // ED → Secretary Rhizalyn
   { from: 'e351', to: 'pmv' },
@@ -86,12 +86,12 @@ export interface CorporateOrgChartHandle {
   exportToPdf: (filename: string) => Promise<void>;
 }
 
-// Pixel-faithful reproduction of the hand-designed A3 "Corporate Organization
-// Chart" (Rev 002). The markup, text, layout and colors are kept exactly as in
-// the supplied HTML/PDF; the only behavioural change is that each person card
-// carries a `data-emp` id, so clicking it opens that employee in the app for
-// editing. CSS is scoped under `.corp-org` so the bespoke `.card`/`.row`/
-// `.content` rules don't clash with the rest of the app.
+// A modern "photo-card" Corporate Organization Chart: clean white canvas,
+// rounded-square headshot cards (gradient accent per branch), gradient section
+// pills, and thin arrowed connectors that follow the cards. Top management
+// (Board + ED/CEO/Ops) is emphasised with larger photos and a stronger accent.
+// Each person card carries a `data-emp` id → clicking opens that employee.
+// CSS is scoped under `.corp-org`.
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
@@ -101,9 +101,9 @@ const CSS = `
 .corp-org {
   position: relative;
   font-family: var(--cff, 'Inter', system-ui, sans-serif);
-  background: linear-gradient(135deg, #0f1c3a 0%, #1a3a5c 50%, #0f2d1e 100%);
+  background: #eef2f7;
   width: 100%; height: 100%; overflow: auto;
-  padding: 16px;
+  padding: 20px;
 }
 
 /* Global text-color override (opt-in) */
@@ -115,220 +115,136 @@ const CSS = `
 .corp-org.cc-color .cext { color: var(--ccc) !important; }
 
 /* Edit mode: cards become selectable/highlightable/draggable */
-.corp-org.editing .card { outline: 1px dashed transparent; outline-offset: 1px; cursor: move; }
+.corp-org.editing .card { outline: 1px dashed transparent; outline-offset: 3px; border-radius: 12px; cursor: move; }
 .corp-org.editing .card:hover { outline-color: #94a3b8; }
-.corp-org .card.corp-selected { outline: 2px solid #2563eb !important; outline-offset: 1px; box-shadow: 0 0 0 3px rgba(37,99,235,.25); }
+.corp-org .card.corp-selected { outline: 2px solid #2563eb !important; outline-offset: 3px; border-radius: 12px; }
 
 /* ── PAGE SHELL ── */
 .corp-org .page {
-  background: #f4f6fa;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.45);
-  max-width: 1560px;
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(15,23,42,.12);
+  max-width: 1640px;
   margin: 0 auto;
   overflow: hidden;
   position: relative;
-  z-index: 0; /* establish a stacking context so the -1 edge layer sits above the page bg, below cards */
+  z-index: 0; /* stacking context so the -1 edge layer sits above bg, below cards */
+  padding-bottom: 26px;
 }
 
-/* ── HEADER BAND ── */
+/* ── HEADER ── */
 .corp-org .hdr {
-  background: linear-gradient(100deg, #0d1f42 0%, #1a3a6c 40%, #0e3020 100%);
-  padding: 16px 20px 14px;
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 3px solid #c9a227;
-  position: relative;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 30px 40px 6px;
 }
-.corp-org .hdr-left { display: flex; flex-direction: column; }
-.corp-org .hdr h1 { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: 1.2px; text-transform: uppercase; }
-.corp-org .hdr h1 span { color: #c9a227; }
-.corp-org .hdr-sub { font-size: 9.5px; color: rgba(255,255,255,.55); margin-top: 3px; letter-spacing: .5px; }
-.corp-org .hdr-badge { display: flex; gap: 8px; align-items: center; }
-.corp-org .badge { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.75); font-size: 9px; font-weight: 600; padding: 3px 9px; border-radius: 12px; letter-spacing: .4px; text-transform: uppercase; }
-.corp-org .badge.gold { background: rgba(201,162,39,.2); border-color: #c9a227; color: #f0d060; }
+.corp-org .hdr h1 { font-size: 27px; font-weight: 800; color: #1e293b; letter-spacing: 1px; line-height: 1.02; text-transform: uppercase; }
+.corp-org .hdr h1 span { display: block; font-weight: 800; color: #94a3b8; letter-spacing: 7px; }
+.corp-org .hdr-sub { font-size: 9.5px; color: #b6c0cf; margin-top: 10px; max-width: 250px; line-height: 1.6; }
+.corp-org .hdr-dots { display: flex; gap: 7px; margin-top: 9px; }
+.corp-org .hdr-dots i { width: 13px; height: 13px; border-radius: 50%; }
+.corp-org .hdr-dots i:nth-child(1) { background: #a78bfa; }
+.corp-org .hdr-dots i:nth-child(2) { background: #60a5fa; }
+.corp-org .hdr-dots i:nth-child(3) { background: #34d399; }
+.corp-org .hdr-brand { display: flex; align-items: center; gap: 11px; }
+.corp-org .hdr-brand .logo { width: 32px; height: 32px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #7dd3fc, #2563eb 70%); box-shadow: inset -3px -3px 6px rgba(0,0,0,.2); }
+.corp-org .hdr-brand .bn { font-size: 13px; font-weight: 700; color: #334155; line-height: 1.15; border-left: 2px solid #cbd5e1; padding-left: 11px; }
+.corp-org .hdr-brand .bn small { display: block; font-weight: 500; color: #94a3b8; font-size: 11px; }
 
-/* ── CONTENT AREA ── */
-.corp-org .content { padding: 14px 12px 10px; }
+/* ── CONTENT ── */
+.corp-org .content { padding: 4px 30px 6px; position: relative; }
+.corp-org .tier { display: flex; align-items: flex-start; justify-content: center; }
+.corp-org .cols { display: flex; align-items: flex-start; justify-content: center; gap: 26px; margin-top: 58px; }
+.corp-org .col { display: flex; flex-direction: column; align-items: center; gap: 12px; flex: 1; max-width: 460px; }
+.corp-org .grid { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: 20px 16px; width: 100%; }
+.corp-org .grp { margin-top: 18px; } /* spacing above a section pill that follows a grid */
 
-/* ── CONNECTOR LINES ── */
-/* The hand-built A3 connectors are hidden (kept for spacing) — connectors are
-   now drawn by the dynamic SVG layer so they follow moved cards. */
-.corp-org .vl { width: 2px; margin: 0 auto; flex-shrink: 0; visibility: hidden; }
-.corp-org .hl { height: 2px; flex-shrink: 0; visibility: hidden; }
-.corp-org .cdv, .corp-org .pdv, .corp-org .pmv, .corp-org .dhv,
-.corp-org .corp-conn { visibility: hidden; }
-
-/* Dynamic connector layer */
+/* ── CONNECTOR LAYER ── */
 .corp-org .corp-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; overflow: visible; }
 .corp-org .corp-edges path { pointer-events: none; }
 .corp-org.linking .corp-edges { z-index: 30; }
 .corp-org.linking .corp-edges path { pointer-events: stroke; cursor: pointer; }
 .corp-org.linking .corp-edges path:hover { stroke: #ef4444 !important; stroke-width: 3 !important; }
 .corp-org.linking .card { cursor: crosshair !important; }
-.corp-org .card.corp-link-src { outline: 2px solid #22c55e !important; outline-offset: 1px; }
-.corp-org .c-navy  { background: #1a3268; }
-.corp-org .c-blue  { background: #1e5f8e; }
-.corp-org .c-green { background: #1a5c3a; }
-.corp-org .c-purp  { background: #5e2a8a; }
-.corp-org .c-orng  { background: #c96520; }
-.corp-org .c-viol  { background: #8a5ac0; }
-.corp-org .c-teal  { background: #1a8a8a; }
-.corp-org .c-sky   { background: #2a7cc0; }
-.corp-org .c-rose  { background: #c03070; }
+.corp-org .card.corp-link-src { outline: 2px solid #22c55e !important; outline-offset: 3px; border-radius: 12px; }
 
-/* ── CARD BASE ── */
-.corp-org .card { border-radius: 8px; position: relative; flex-shrink: 0; overflow: hidden; }
-.corp-org .card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
-.corp-org .card[data-emp] { cursor: pointer; transition: filter .12s, box-shadow .12s; }
-.corp-org .card[data-emp]:hover { filter: brightness(1.04); box-shadow: 0 5px 16px rgba(0,0,0,.2); }
-.corp-org .card-inner { padding: 6px 9px 6px 11px; }
-.corp-org .clabel  { font-size: calc(7px * var(--cfs,1)); font-weight: 700; letter-spacing: .8px; text-transform: uppercase; margin-bottom: 1px; }
-.corp-org .cname   { font-size: calc(11px * var(--cfs,1)); font-weight: 800; line-height: 1.2; }
-.corp-org .ctitle  { font-size: calc(8px * var(--cfs,1)); font-weight: 500; line-height: 1.35; margin-top: 1px; }
-.corp-org .csub    { font-size: calc(7.5px * var(--cfs,1)); font-weight: 400; margin-top: 1px; opacity: .75; }
-.corp-org .cpill   { display: inline-block; font-size: calc(7px * var(--cfs,1)); font-weight: 700; padding: 1px 5px; border-radius: 8px; margin-top: 3px; letter-spacing: .3px; }
-.corp-org .cext { font-size: calc(7px * var(--cfs,1)); opacity: .6; margin-top: 1px; }
+/* ── CARD (vertical photo card) ── */
+.corp-org .card { position: relative; display: flex; flex-direction: column; align-items: center; width: 124px; flex-shrink: 0; background: transparent;
+  --a1: #a78bfa; --a2: #7c3aed; --accent: #7c3aed; --pill: #f1ecff; }
+.corp-org .card[data-emp] { cursor: pointer; }
+.corp-org .card-inner { display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%; }
+.corp-org .card-inner.has-photo { gap: 9px; }
 
-/* ── PHOTO AVATAR ── */
-/* Blank round placeholder on the left of every person card. The avatar is
-   injected by the reconcile pass into [data-emp] cards; existing card text is
-   wrapped into .cbody so the two sit side-by-side. (No real image yet.) */
-.corp-org .card-inner.has-photo { display: flex; align-items: center; gap: 8px; }
-.corp-org .cbody { min-width: 0; flex: 1; }
+/* Photo: rounded square with an offset gradient "card" behind it. */
 .corp-org .cphoto {
-  flex-shrink: 0;
-  width: calc(26px * var(--cfs,1));
-  height: calc(26px * var(--cfs,1));
-  border-radius: 50%;
+  width: 62px; height: 62px; border-radius: 16px;
   background: #e2e8f0 center/cover no-repeat;
-  border: 1px solid rgba(0,0,0,.12);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,.1);
+  position: relative; z-index: 1;
+  box-shadow: 0 7px 16px rgba(15,23,42,.16);
 }
-/* Bigger avatar + light border on the large dark leadership cards. */
-.corp-org .cv-board .cphoto,
-.corp-org .cv-ed .cphoto,
-.corp-org .cv-ceo .cphoto,
-.corp-org .cv-ops .cphoto,
-.corp-org .cv-mbm .cphoto {
-  width: calc(42px * var(--cfs,1));
-  height: calc(42px * var(--cfs,1));
-  background: rgba(255,255,255,.15);
-  border-color: rgba(255,255,255,.35);
+.corp-org .cphoto::before {
+  content: ''; position: absolute; inset: 0; border-radius: 16px; z-index: -1;
+  background: linear-gradient(140deg, var(--a1), var(--a2));
+  transform: translate(-6px, 7px);
 }
-/* Small dashed PA / secretary cards keep a compact avatar. */
-.corp-org .cv-side .cphoto { width: calc(22px * var(--cfs,1)); height: calc(22px * var(--cfs,1)); }
 
-/* ── CARD VARIANTS ── */
-.corp-org .cv-board { background: linear-gradient(135deg, #0d1f42 0%, #1a3a6e 100%); box-shadow: 0 4px 16px rgba(13,31,66,.4), inset 0 1px 0 rgba(255,255,255,.08); border: 1px solid #2a4a8e; }
-.corp-org .cv-board::before { background: #c9a227; }
-.corp-org .cv-board .clabel { color: #c9a227; }
-.corp-org .cv-board .cname  { color: #fff; font-size: calc(15px * var(--cfs,1)); }
-.corp-org .cv-board .ctitle { color: rgba(255,255,255,.65); }
+.corp-org .cbody { display: flex; flex-direction: column; align-items: center; }
+.corp-org .clabel { font-size: calc(7.5px * var(--cfs,1)); font-weight: 800; letter-spacing: .7px; text-transform: uppercase; color: var(--accent); margin-bottom: 1px; }
+.corp-org .cname  { font-size: calc(12.5px * var(--cfs,1)); font-weight: 700; color: #1f2937; line-height: 1.22; }
+.corp-org .ctitle { font-size: calc(8px * var(--cfs,1)); font-weight: 600; letter-spacing: .8px; text-transform: uppercase; color: #9aa6b6; margin-top: 4px; }
+.corp-org .cbody .ctitle:first-of-type::before { content: '— '; color: #cbd5e1; }
+.corp-org .cbody .ctitle:first-of-type::after  { content: ' —'; color: #cbd5e1; }
+.corp-org .csub   { font-size: calc(7.5px * var(--cfs,1)); color: #b9c2cf; margin-top: 3px; font-style: italic; }
+.corp-org .cpill  { display: inline-block; font-size: calc(7.5px * var(--cfs,1)); font-weight: 700; color: var(--accent); background: var(--pill); padding: 2px 8px; border-radius: 10px; margin-top: 6px; letter-spacing: .2px; }
+.corp-org .cext   { font-size: calc(7px * var(--cfs,1)); color: #c0c9d6; margin-top: 2px; }
 
-.corp-org .cv-ed { background: linear-gradient(135deg, #124a70 0%, #1e6ea0 100%); box-shadow: 0 3px 12px rgba(18,74,112,.35), inset 0 1px 0 rgba(255,255,255,.08); border: 1px solid #2a80b8; }
-.corp-org .cv-ed::before { background: #5bc8f0; }
-.corp-org .cv-ed .clabel { color: #90d8f8; }
-.corp-org .cv-ed .cname  { color: #fff; }
-.corp-org .cv-ed .ctitle { color: rgba(255,255,255,.72); }
-.corp-org .cv-ed .csub   { color: rgba(255,255,255,.5); }
+/* ── PER-BRANCH ACCENTS ── */
+/* Top management — bigger photos + stronger accent. */
+.corp-org .cv-board { width: 200px; --a1: #818cf8; --a2: #4f46e5; --accent: #4338ca; --pill: #eef0ff; }
+.corp-org .cv-board .cphoto { width: 96px; height: 96px; border-radius: 22px; }
+.corp-org .cv-board .cphoto::before { transform: translate(-9px, 10px); border-radius: 22px; }
+.corp-org .cv-board .cname { font-size: calc(17px * var(--cfs,1)); }
 
-.corp-org .cv-ceo { background: linear-gradient(135deg, #0e3f27 0%, #1a6040 100%); box-shadow: 0 3px 12px rgba(14,63,39,.35), inset 0 1px 0 rgba(255,255,255,.08); border: 1px solid #2a8058; }
-.corp-org .cv-ceo::before { background: #4cd894; }
-.corp-org .cv-ceo .clabel { color: #7ee8b0; }
-.corp-org .cv-ceo .cname  { color: #fff; }
-.corp-org .cv-ceo .ctitle { color: rgba(255,255,255,.72); }
-.corp-org .cv-ceo .csub   { color: rgba(255,255,255,.5); }
+.corp-org .cv-ed  { width: 168px; --a1: #a78bfa; --a2: #7c3aed; --accent: #6d28d9; --pill: #f1ecff; }
+.corp-org .cv-ceo { width: 168px; --a1: #60a5fa; --a2: #2563eb; --accent: #1d4ed8; --pill: #e7efff; }
+.corp-org .cv-ops { width: 168px; --a1: #34d399; --a2: #059669; --accent: #047857; --pill: #e3f7ef; }
+.corp-org .cv-ed .cphoto, .corp-org .cv-ceo .cphoto, .corp-org .cv-ops .cphoto { width: 80px; height: 80px; border-radius: 20px; }
+.corp-org .cv-ed .cphoto::before, .corp-org .cv-ceo .cphoto::before, .corp-org .cv-ops .cphoto::before { transform: translate(-8px, 9px); border-radius: 20px; }
+.corp-org .cv-ed .cname, .corp-org .cv-ceo .cname, .corp-org .cv-ops .cname { font-size: calc(14.5px * var(--cfs,1)); }
 
-.corp-org .cv-ops { background: linear-gradient(135deg, #3a1060 0%, #6030a0 100%); box-shadow: 0 3px 12px rgba(58,16,96,.35), inset 0 1px 0 rgba(255,255,255,.08); border: 1px solid #8040c0; }
-.corp-org .cv-ops::before { background: #c090ff; }
-.corp-org .cv-ops .clabel { color: #d0a8ff; }
-.corp-org .cv-ops .cname  { color: #fff; }
-.corp-org .cv-ops .ctitle { color: rgba(255,255,255,.72); }
+/* Section-scoped accents */
+.corp-org [data-section="ed-depts"] .card  { --a1: #a78bfa; --a2: #7c3aed; --accent: #6d28d9; --pill: #f1ecff; }
+.corp-org [data-section="ceo-depts"] .card { --a1: #60a5fa; --a2: #2563eb; --accent: #1d4ed8; --pill: #e7efff; }
+.corp-org [data-section="ops-pd"] .card    { --a1: #c084fc; --a2: #9333ea; --accent: #7e22ce; --pill: #f6ecff; }
+.corp-org [data-section="ops-pm"] .card    { --a1: #2dd4bf; --a2: #0d9488; --accent: #0f766e; --pill: #def7f3; }
+.corp-org [data-section="ops-dh"] .card    { --a1: #38bdf8; --a2: #0284c7; --accent: #0369a1; --pill: #e2f2fd; }
+.corp-org .cv-mbm { --a1: #60a5fa; --a2: #1d4ed8; --accent: #1e40af; --pill: #e7efff; }
+.corp-org .cv-hr  { --a1: #f472b6; --a2: #db2777; --accent: #be185d; --pill: #fde7f1; }
+.corp-org .cv-side { width: 108px; --a1: #cbd5e1; --a2: #94a3b8; --accent: #64748b; --pill: #eef2f7; }
+.corp-org .cv-side .cphoto { width: 44px; height: 44px; border-radius: 12px; }
+.corp-org .cv-side .cphoto::before { transform: translate(-4px, 5px); border-radius: 12px; }
+.corp-org .cv-side .cname { font-size: calc(10px * var(--cfs,1)); }
+.corp-org .cv-side .ctitle:first-of-type::before, .corp-org .cv-side .ctitle:first-of-type::after { content: ''; }
 
-.corp-org .cv-dept { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.08); border: 1px solid #f0c8a0; }
-.corp-org .cv-dept::before { background: #e07030; }
-.corp-org .cv-dept .clabel { color: #b05020; }
-.corp-org .cv-dept .cname  { color: #5a2800; font-size: calc(9px * var(--cfs,1)); }
-.corp-org .cv-dept .ctitle { color: #804020; }
-.corp-org .cv-dept .cext   { color: #a06040; }
+/* ── SECTION PILLS (gradient border) ── */
+.corp-org .sec-pill {
+  font-size: calc(9px * var(--cfs,1)); font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+  padding: 6px 15px; border-radius: 14px; color: var(--pc, #7c3aed);
+  background: linear-gradient(#fff,#fff) padding-box, linear-gradient(135deg, var(--p1,#a78bfa), var(--p2,#7c3aed)) border-box;
+  border: 2px solid transparent;
+  box-shadow: 0 3px 8px rgba(15,23,42,.07);
+  white-space: nowrap;
+}
+.corp-org .sp-ed   { --p1:#a78bfa; --p2:#7c3aed; --pc:#6d28d9; }
+.corp-org .sp-ceo  { --p1:#60a5fa; --p2:#2563eb; --pc:#1d4ed8; }
+.corp-org .sp-ops  { --p1:#34d399; --p2:#059669; --pc:#047857; }
+.corp-org .sp-mbm  { --p1:#60a5fa; --p2:#1d4ed8; --pc:#1e40af; }
+.corp-org .sp-dept { --p1:#93c5fd; --p2:#3b82f6; --pc:#1d4ed8; }
+.corp-org .sp-pd   { --p1:#c084fc; --p2:#9333ea; --pc:#7e22ce; }
+.corp-org .sp-pm   { --p1:#2dd4bf; --p2:#0d9488; --pc:#0f766e; }
+.corp-org .sp-dh   { --p1:#38bdf8; --p2:#0284c7; --pc:#0369a1; }
 
-.corp-org .cv-hr { background: #fff5f8; box-shadow: 0 2px 8px rgba(0,0,0,.08); border: 1px solid #f0a0c0; }
-.corp-org .cv-hr::before { background: #c03070; }
-.corp-org .cv-hr .clabel { color: #901050; }
-.corp-org .cv-hr .cname  { color: #600030; font-size: calc(9px * var(--cfs,1)); }
-.corp-org .cv-hr .ctitle { color: #901050; }
-
-.corp-org .cv-mbm { background: linear-gradient(135deg, #0a3060 0%, #1050a0 100%); box-shadow: 0 2px 10px rgba(10,48,96,.3); border: 1px solid #2060c0; }
-.corp-org .cv-mbm::before { background: #60c0ff; }
-.corp-org .cv-mbm .clabel { color: #90d0ff; }
-.corp-org .cv-mbm .cname  { color: #fff; }
-.corp-org .cv-mbm .ctitle { color: rgba(255,255,255,.7); }
-
-.corp-org .cv-pd { background: #faf5ff; box-shadow: 0 2px 8px rgba(0,0,0,.07); border: 1px solid #c8a0e8; }
-.corp-org .cv-pd::before { background: #8040c0; }
-.corp-org .cv-pd .clabel { color: #6020a0; }
-.corp-org .cv-pd .cname  { color: #3a1060; font-size: calc(9px * var(--cfs,1)); }
-.corp-org .cv-pd .ctitle { color: #6030a0; }
-.corp-org .cv-pd .cpill  { background: #ede0ff; color: #5020a0; border: 1px solid #c8a0e8; }
-
-.corp-org .cv-pm { background: #f0fafa; box-shadow: 0 2px 8px rgba(0,0,0,.07); border: 1px solid #80c8c8; }
-.corp-org .cv-pm::before { background: #1a8a8a; }
-.corp-org .cv-pm .clabel { color: #0a6060; }
-.corp-org .cv-pm .cname  { color: #083838; font-size: calc(9px * var(--cfs,1)); }
-.corp-org .cv-pm .ctitle { color: #1a6060; }
-.corp-org .cv-pm .cpill  { background: #d8f4f4; color: #0a5858; border: 1px solid #80c8c8; }
-
-.corp-org .cv-dh { background: #f0f6ff; box-shadow: 0 2px 8px rgba(0,0,0,.07); border: 1px solid #80a8d8; }
-.corp-org .cv-dh::before { background: #2a7cc0; }
-.corp-org .cv-dh .clabel { color: #0a4878; }
-.corp-org .cv-dh .cname  { color: #082848; }
-.corp-org .cv-dh .ctitle { color: #1a5888; }
-.corp-org .cv-dh .csub   { color: #2a70a0; font-weight: 600; font-size: 7px; }
-
-.corp-org .cv-side { background: #fdf8ff; box-shadow: 0 2px 6px rgba(0,0,0,.06); border: 1px dashed #b080d0; }
-.corp-org .cv-side::before { background: #b080d0; }
-.corp-org .cv-side .cname  { color: #4a1880; font-size: 9.5px; }
-.corp-org .cv-side .ctitle { color: #7040a8; }
-
-/* ── SECTION HEADER PILLS ── */
-.corp-org .sec-pill { font-size: 7.5px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; margin-bottom: 4px; display: inline-block; }
-.corp-org .sp-pd   { background: #ede0ff; color: #5020a0; border: 1px solid #c8a0e8; }
-.corp-org .sp-pm   { background: #d8f4f4; color: #0a5858; border: 1px solid #80c8c8; }
-.corp-org .sp-dh   { background: #deeeff; color: #0a3868; border: 1px solid #80a8d8; }
-.corp-org .sp-dept { background: #fff0e0; color: #804020; border: 1px solid #e8a860; }
-.corp-org .sp-ed   { background: #e0f0ff; color: #1040a0; border: 1px solid #80b0e0; }
-.corp-org .sp-mbm  { background: #d0e8ff; color: #003870; border: 1px solid #60a0e0; }
-
-/* ── INDIRECT DOTTED ARROW ── */
-.corp-org .indirect-row { display: flex; align-items: center; gap: 3px; margin-top: 4px; padding-top: 3px; border-top: 1px solid rgba(192,48,112,.2); }
-.corp-org .indirect-line { flex: 1; border-top: 2px dashed #c03070; height: 0; }
-.corp-org .indirect-label { font-size: 6.5px; font-weight: 700; color: #c03070; white-space: nowrap; background: #fff0f6; padding: 1px 4px; border-radius: 3px; border: 1px solid #f0a0c0; }
-
-/* ── NOTE BOX ── */
-.corp-org .notebox { background: linear-gradient(135deg, #fffae8 0%, #fff8e0 100%); border: 1px solid #e8c840; border-left: 4px solid #c9a227; border-radius: 6px; padding: 8px 12px; font-size: 9px; line-height: 1.65; color: #4a3800; box-shadow: 0 2px 8px rgba(200,160,0,.1); }
-.corp-org .notebox strong { color: #2a1800; }
-
-/* ── LEGEND ── */
-.corp-org .legend-wrap { background: #fff; border-top: 2px solid #e0e4ec; padding: 10px 14px 8px; display: flex; flex-direction: column; gap: 6px; }
-.corp-org .legend-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.corp-org .li { display: flex; align-items: center; gap: 5px; font-size: 9px; color: #444; }
-.corp-org .ld { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
-.corp-org .ld-dash { width: 20px; height: 0; border-top: 2px dashed #c03070; flex-shrink: 0; }
-.corp-org .legend-footer { text-align: center; font-size: 8px; color: #aaa; }
-
-/* ── FLEX HELPERS ── */
-.corp-org .col { display: flex; flex-direction: column; align-items: center; }
-.corp-org .row { display: flex; align-items: flex-start; justify-content: center; }
-
-/* ── DEPARTMENT / PD / PM / DH COMB CONNECTORS ── */
-.corp-org .cd { display: flex; flex-direction: column; align-items: center; }
-.corp-org .cd > .cdv { width: 2px; height: 8px; background: #e07030; }
-.corp-org .cpd { display: flex; flex-direction: column; align-items: center; }
-.corp-org .cpd > .pdv { width: 2px; height: 8px; background: #8040c0; }
-.corp-org .cpm { display: flex; flex-direction: column; align-items: center; }
-.corp-org .cpm > .pmv { width: 2px; height: 8px; background: #1a8a8a; }
-.corp-org .cdh { display: flex; flex-direction: column; align-items: center; }
-.corp-org .cdh > .dhv { width: 2px; height: 8px; background: #2a7cc0; }
+/* ── FOOTER ── */
+.corp-org .foot { text-align: center; font-size: 8.5px; color: #b6c0cf; margin-top: 22px; letter-spacing: .3px; }
 `;
 
 const CHART_HTML = `
@@ -337,300 +253,148 @@ const CHART_HTML = `
 <!-- HEADER -->
 <div class="hdr">
   <div class="hdr-left">
-    <h1>Corporate <span>Organization</span> Chart &nbsp;—&nbsp; All Companies</h1>
+    <h1>Organizational <span>Chart</span></h1>
+    <div class="hdr-sub">All companies — ABC &amp; MBM Gulf construction group. Reporting lines and key leadership at a glance.</div>
+    <div class="hdr-dots"><i></i><i></i><i></i></div>
+  </div>
+  <div class="hdr-brand">
+    <div class="logo"></div>
+    <div class="bn">ABC Group<small>MBM Gulf</small></div>
   </div>
 </div>
 
 <!-- CHART BODY -->
 <div class="content">
-<div class="col" style="gap:0; width:100%;">
 
-  <!-- ── BOARD OF DIRECTORS ── -->
-  <div class="row" style="align-items:center; gap:10px; margin-bottom:0;">
-    <div style="width:150px;"></div>
-    <div class="card cv-board" data-emp="ecorp13" style="width:200px;">
-      <div class="card-inner" style="padding:10px 12px 10px 14px; text-align:center;">
+  <!-- TIER 0 — BOARD (centered) + PA to the side -->
+  <div class="tier">
+    <div style="flex:1; display:flex; justify-content:flex-end;"></div>
+    <div class="card cv-board" data-emp="ecorp13">
+      <div class="card-inner">
         <div class="clabel">Governing Body</div>
-        <div class="cname" data-sync="name" style="font-size:calc(16px*var(--cfs,1)); letter-spacing:.3px;">Board of Directors</div>
+        <div class="cname" data-sync="name">Board of Directors</div>
         <div class="ctitle">Head Office</div>
       </div>
     </div>
-    <div style="display:flex; align-items:center; gap:6px; width:150px;">
-      <div class="corp-conn" style="border-top:2px dashed rgba(176,128,208,.7); width:20px; flex-shrink:0;"></div>
-      <div class="card cv-side" data-emp="e60" style="width:130px;">
+    <div style="flex:1; display:flex; justify-content:flex-start;">
+      <div class="card cv-side" data-emp="e60" style="margin-top:24px; margin-left:14px;">
         <div class="card-inner">
-          <div class="clabel" style="color:#8040b0;">PA to MD</div>
+          <div class="clabel">PA to MD</div>
           <div class="cname" data-sync="name">Malak Benoudjafer</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- vertical stem from Board -->
-  <div class="vl c-navy" style="height:16px;"></div>
+  <!-- TIER 1+2 — THREE COLUMNS: ED | CEO | OPS -->
+  <div class="cols">
 
-  <!-- ── HORIZONTAL BRIDGE: ED | CEO | OPS ── -->
-  <div style="display:flex; align-items:flex-start; justify-content:center; width:100%; position:relative;">
-    <div style="flex:1; max-width:320px; display:flex; flex-direction:column; align-items:center;">
-      <div class="hl c-navy" style="width:55%; align-self:flex-end;"></div>
-      <div class="vl c-navy" style="height:12px;"></div>
+    <!-- COLUMN A — EXECUTIVE DIRECTOR -->
+    <div class="col">
+      <div class="sec-pill sp-ed">Executive Director</div>
+      <div class="card cv-ed" data-emp="e351">
+        <div class="card-inner">
+          <div class="cname" data-sync="name">Ziya Akhtar</div>
+          <div class="ctitle">Executive Director</div>
+          <div class="csub">→ Board of Directors · indirect line to CEO</div>
+        </div>
+      </div>
+      <div class="card cv-side" data-emp="e97">
+        <div class="card-inner">
+          <div class="clabel">Secretary to ED</div>
+          <div class="cname" data-sync="name">Rhizalyn</div>
+        </div>
+      </div>
+
+      <div class="sec-pill sp-ed grp">Depts. reporting to ED</div>
+      <div class="grid" data-section="ed-depts">
+        <div class="card cv-dept" data-card="pmv"><div class="card-inner"><div class="cname">PMV &amp; Logistics</div></div></div>
+        <div class="card cv-dept" data-emp="e154"><div class="card-inner"><div class="cname">Factory</div><div class="ctitle" data-sync="person">Fadi · Div. Manager</div></div></div>
+        <div class="card cv-dept" data-emp="e86"><div class="card-inner"><div class="cname">Public Relations</div><div class="ctitle" data-sync="person">Saeed Al Falasi · GRO Mgr</div></div></div>
+        <div class="card cv-dept" data-emp="e64"><div class="card-inner"><div class="cname">Legal</div><div class="ctitle" data-sync="person">Raid · Mgr – Legal</div></div></div>
+        <div class="card cv-hr" data-emp="e403"><div class="card-inner"><div class="clabel">Human Resources</div><div class="cname" data-sync="name">Rajesh Nair</div><div class="ctitle" data-sync="title">Director – HR</div></div></div>
+      </div>
     </div>
-    <div style="display:flex; flex-direction:column; align-items:center; flex-shrink:0;">
-      <div class="hl c-navy" style="width:260px;"></div>
-      <div class="vl c-navy" style="height:12px;"></div>
+
+    <!-- COLUMN B — CEO -->
+    <div class="col">
+      <div class="sec-pill sp-ceo">Chief Executive Officer</div>
+      <div class="card cv-ceo" data-emp="ecorp01">
+        <div class="card-inner">
+          <div class="cname" data-sync="name">Harish Wadkar</div>
+          <div class="ctitle">Chief Executive Officer</div>
+          <div class="csub">→ Board · ⤵ Rajesh Nair (indirect)</div>
+        </div>
+      </div>
+      <div class="card cv-side" data-emp="e31">
+        <div class="card-inner">
+          <div class="clabel">Secretary to CEO</div>
+          <div class="cname" data-sync="name">Jeramie Pantas</div>
+        </div>
+      </div>
+
+      <div class="sec-pill sp-mbm grp">MBM Gulf</div>
+      <div class="grid">
+        <div class="card cv-mbm" data-emp="e407"><div class="card-inner"><div class="clabel">General Manager</div><div class="cname" data-sync="name">Jai Shankar</div><div class="ctitle">MBM Gulf</div></div></div>
+      </div>
+
+      <div class="sec-pill sp-dept grp">10 Departments</div>
+      <div class="grid" data-section="ceo-depts">
+        <div class="card cv-dept" data-emp="e411"><div class="card-inner"><div class="cname">Accounts &amp; Finance</div><div class="ctitle" data-sync="person">Mohit Kumar · CFO</div><div class="cext">Ext 131</div></div></div>
+        <div class="card cv-dept" data-card="interiors"><div class="card-inner"><div class="cname">Interiors</div><div class="ctitle">Pooja · PD – Fit Outs</div></div></div>
+        <div class="card cv-dept" data-emp="ecorp09"><div class="card-inner"><div class="cname">Stores</div><div class="ctitle" data-sync="name">Manoj Kumar</div><div class="ctitle" data-sync="title">Mgr – Stores</div></div></div>
+        <div class="card cv-dept" data-emp="e402"><div class="card-inner"><div class="cname">Procurement</div><div class="ctitle" data-sync="person">Mohd. Yousuff</div><div class="cext">Ext 192</div></div></div>
+        <div class="card cv-dept" data-emp="e410"><div class="card-inner"><div class="cname">IT</div><div class="ctitle" data-sync="name">Abdullah</div><div class="ctitle" data-sync="title">Manager – IT</div></div></div>
+        <div class="card cv-dept" data-emp="e23"><div class="card-inner"><div class="cname">BD Approvals</div><div class="ctitle" data-sync="name">Pooja Chavan</div><div class="ctitle" data-sync="title">Sr Exe – BD</div></div></div>
+        <div class="card cv-dept" data-emp="e416"><div class="card-inner"><div class="cname">Commercials</div><div class="ctitle" data-sync="name">Lokesh Kumar</div><div class="ctitle" data-sync="title">Dir – Commercial</div></div></div>
+        <div class="card cv-dept" data-emp="e98"><div class="card-inner"><div class="cname">Tender &amp; Estimation</div><div class="ctitle" data-sync="person">Rajesh · Dir BD &amp; Est.</div></div></div>
+        <div class="card cv-dept" data-emp="e401"><div class="card-inner"><div class="cname">Cost Control / Comm.</div><div class="ctitle" data-sync="person">Satya Addala · CCO</div><div class="cext">Ext 205</div></div></div>
+        <div class="card cv-dept" data-emp="e59"><div class="card-inner"><div class="cname">Planning</div><div class="ctitle" data-sync="name">Ghulsan Kumar</div><div class="ctitle" data-sync="title">Planning Mgr</div></div></div>
+      </div>
     </div>
-    <div style="flex:1; max-width:720px; display:flex; flex-direction:column; align-items:center;">
-      <div class="hl c-navy" style="width:55%; align-self:flex-start;"></div>
-      <div class="vl c-navy" style="height:12px;"></div>
+
+    <!-- COLUMN C — OPERATIONS DIRECTOR -->
+    <div class="col">
+      <div class="sec-pill sp-ops">Operations Director</div>
+      <div class="card cv-ops" data-emp="ecorp02">
+        <div class="card-inner">
+          <div class="cname">Liam Column</div>
+          <div class="ctitle">Operations Director</div>
+          <div class="csub">→ CEO</div>
+        </div>
+      </div>
+
+      <div class="sec-pill sp-pd grp">Project Directors</div>
+      <div class="grid" data-section="ops-pd">
+        <div class="card cv-pd" data-emp="e418"><div class="card-inner"><div class="cname" data-sync="name">Gajendra Kumar</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">TBD</div></div></div>
+        <div class="card cv-pd" data-emp="e323"><div class="card-inner"><div class="cname" data-sync="name">Krishnamohan Rao</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Lagoon (53,61&amp;65)</div></div></div>
+        <div class="card cv-pd" data-emp="e378"><div class="card-inner"><div class="cname" data-sync="name">Punyamurthi</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">W Residences</div></div></div>
+        <div class="card cv-pd" data-emp="e189"><div class="card-inner"><div class="cname" data-sync="name">Philip Watson</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Bay 2</div></div></div>
+        <div class="card cv-pd" data-emp="e251"><div class="card-inner"><div class="cname" data-sync="name">Abdul Kader</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Deira Islands</div></div></div>
+        <div class="card cv-pd" data-emp="ecorp04"><div class="card-inner"><div class="cname" data-sync="name">Prabhu</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Eywa</div></div></div>
+      </div>
+
+      <div class="sec-pill sp-pm grp">Project Managers</div>
+      <div class="grid" data-section="ops-pm">
+        <div class="card cv-pm" data-emp="e45"><div class="card-inner"><div class="cname" data-sync="name">Abu Jalala</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">13 Farm House</div></div></div>
+        <div class="card cv-pm" data-emp="e186"><div class="card-inner"><div class="cname" data-sync="name">Parth</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">Bay 2</div></div></div>
+        <div class="card cv-pm" data-emp="ecorp05"><div class="card-inner"><div class="cname" data-sync="name">Jagdeshian</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">Deira Islands</div></div></div>
+        <div class="card cv-pm" data-emp="e301"><div class="card-inner"><div class="cname" data-sync="name">Andrew Samuel / Akram</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">Eywa</div></div></div>
+      </div>
+
+      <div class="sec-pill sp-dh grp">Dept. Heads</div>
+      <div class="grid" data-section="ops-dh">
+        <div class="card cv-dh" data-emp="e390"><div class="card-inner"><div class="clabel">HSE</div><div class="cname" data-sync="name">Rockey Vibin</div><div class="ctitle" data-sync="title">Sr. HSE Manager</div></div></div>
+        <div class="card cv-dh" data-emp="e298"><div class="card-inner"><div class="clabel">Quality Control</div><div class="cname" data-sync="name">Anil</div><div class="ctitle" data-sync="title">QA/QC Manager</div></div></div>
+        <div class="card cv-dh" data-emp="e10"><div class="card-inner"><div class="clabel">Technical</div><div class="cname" data-sync="name">Anoop David</div><div class="ctitle" data-sync="title">Technical Manager</div></div></div>
+      </div>
     </div>
-  </div>
 
-  <!-- ── LEVEL 2: THREE COLUMNS ── -->
-  <div class="row" style="align-items:flex-start; gap:10px; width:100%; flex-wrap:nowrap;">
+  </div><!-- end .cols -->
 
-    <!-- COLUMN A — ZIYA (ED) -->
-    <div class="col" style="flex:0 0 auto; width:240px;">
+  <div class="foot">For internal use only &nbsp;·&nbsp; Confidential &nbsp;·&nbsp; Click any card to open &amp; edit the employee</div>
 
-      <div class="row" style="align-items:center; gap:5px;">
-        <div class="card cv-side" data-emp="e97" style="width:96px;">
-          <div class="card-inner" style="padding:5px 7px 5px 9px;">
-            <div class="clabel" style="color:#8040b0;">Secretary to ED</div>
-            <div class="cname" data-sync="name" style="font-size:calc(9px*var(--cfs,1));">Rhizalyn</div>
-          </div>
-        </div>
-        <div class="corp-conn" style="border-top:2px dashed #b080d0; width:12px; flex-shrink:0;"></div>
-        <div class="card cv-ed" data-emp="e351" style="width:136px;">
-          <div class="card-inner" style="padding:8px 9px 8px 13px;">
-            <div class="clabel">Executive Director</div>
-            <div class="cname" data-sync="name" style="font-size:calc(13px*var(--cfs,1));">Ziya Akhtar</div>
-            <div class="csub">→ Board of Directors</div>
-            <div style="font-size:6.5px; color:rgba(255,200,80,.8); margin-top:1px; font-style:italic;">indirect line to CEO</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="vl c-blue" style="height:10px;"></div>
-      <div class="sec-pill sp-ed" style="margin-bottom:4px;">Depts. reporting to ED</div>
-
-      <!-- Vertical stack with left bracket -->
-      <div style="display:flex; align-items:stretch; gap:0; width:220px;">
-        <div class="corp-conn" style="width:3px; background:linear-gradient(180deg,#e07030,#c05020); border-radius:2px; flex-shrink:0;"></div>
-        <div data-section="ed-depts" style="display:flex; flex-direction:column; gap:3px; flex:1; padding-left:0;">
-
-          <div class="cbrow" style="display:flex; align-items:center; gap:0;">
-            <div class="corp-conn" style="width:12px; height:2px; background:#e07030; flex-shrink:0;"></div>
-            <div class="card cv-dept" data-card="pmv" style="flex:1;">
-              <div class="card-inner" style="padding:4px 8px 4px 10px; text-align:left;">
-                <div class="cname">PMV &amp; Logistics</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="cbrow" style="display:flex; align-items:center; gap:0;">
-            <div class="corp-conn" style="width:12px; height:2px; background:#e07030; flex-shrink:0;"></div>
-            <div class="card cv-dept" data-emp="e154" style="flex:1;">
-              <div class="card-inner" style="padding:4px 8px 4px 10px; text-align:left;">
-                <div class="cname">Factory</div>
-                <div class="ctitle" data-sync="person">Fadi &nbsp;·&nbsp; Div. Manager</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="cbrow" style="display:flex; align-items:center; gap:0;">
-            <div class="corp-conn" style="width:12px; height:2px; background:#e07030; flex-shrink:0;"></div>
-            <div class="card cv-dept" data-emp="e86" style="flex:1;">
-              <div class="card-inner" style="padding:4px 8px 4px 10px; text-align:left;">
-                <div class="cname">Public Relations</div>
-                <div class="ctitle" data-sync="person">Saeed Al Falasi &nbsp;·&nbsp; GRO Mgr</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="cbrow" style="display:flex; align-items:center; gap:0;">
-            <div class="corp-conn" style="width:12px; height:2px; background:#e07030; flex-shrink:0;"></div>
-            <div class="card cv-dept" data-emp="e64" style="flex:1;">
-              <div class="card-inner" style="padding:4px 8px 4px 10px; text-align:left;">
-                <div class="cname">Legal</div>
-                <div class="ctitle" data-sync="person">Raid &nbsp;·&nbsp; Mgr – Legal</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- HR — special dual-report box -->
-          <div class="cbrow" style="display:flex; align-items:center; gap:0;">
-            <div class="corp-conn" style="width:12px; height:2px; background:#c03070; flex-shrink:0;"></div>
-            <div class="card cv-hr" data-emp="e403" style="flex:1;">
-              <div class="card-inner" style="padding:4px 8px 4px 10px; text-align:left;">
-                <div class="clabel">Human Resources</div>
-                <div class="cname" data-sync="name">Rajesh Nair</div>
-                <div class="ctitle" data-sync="title">Director – HR</div>
-                <div class="indirect-row">
-                  <div class="indirect-line"></div>
-                  <div class="indirect-label">⤳ CEO (indirect)</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </div><!-- end Ziya col -->
-
-    <!-- COLUMN B — HARISH (CEO) -->
-    <div class="col" style="flex:1; max-width:490px; min-width:380px;">
-
-      <div class="row" style="align-items:center; gap:6px;">
-        <div class="card cv-ceo" data-emp="ecorp01" style="width:178px;">
-          <div class="card-inner" style="padding:9px 10px 9px 14px;">
-            <div class="clabel">Chief Executive Officer</div>
-            <div class="cname" data-sync="name" style="font-size:calc(14px*var(--cfs,1));">Harish Wadkar</div>
-            <div class="csub">→ Board of Directors</div>
-            <div style="font-size:6.5px; color:rgba(180,255,200,.65); margin-top:2px; padding-top:2px; border-top:1px dashed rgba(255,255,255,.2); font-style:italic;">⤵ Rajesh Nair (indirect)</div>
-          </div>
-        </div>
-        <div class="corp-conn" style="border-top:2px dashed rgba(150,150,160,.6); width:12px; flex-shrink:0;"></div>
-        <div class="card cv-side" data-emp="e31" style="width:120px;">
-          <div class="card-inner" style="padding:5px 7px 5px 9px;">
-            <div class="clabel" style="color:#8040b0;">Secretary to CEO</div>
-            <div class="cname" data-sync="name" style="font-size:calc(9px*var(--cfs,1));">Jeramie Pantas</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="vl c-green" style="height:10px;"></div>
-
-      <!-- Two branches: MBM Gulf | 10 Departments -->
-      <div style="position:relative; display:flex; gap:0; align-items:flex-start; justify-content:center; width:100%;">
-        <div class="hl c-green" style="position:absolute; top:0; left:18%; right:18%;"></div>
-
-        <!-- MBM GULF -->
-        <div class="col" style="flex:1; max-width:175px;">
-          <div class="vl c-green" style="height:10px;"></div>
-          <div class="sec-pill sp-mbm">MBM Gulf</div>
-          <div class="card cv-mbm" data-emp="e407" style="width:158px;">
-            <div class="card-inner" style="padding:7px 9px 7px 13px;">
-              <div class="clabel">General Manager</div>
-              <div class="cname" data-sync="name" style="font-size:calc(12px*var(--cfs,1));">Jai Shankar</div>
-              <div class="ctitle">MBM Gulf</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 10 DEPARTMENTS -->
-        <div class="col" style="flex:1; max-width:320px;">
-          <div class="vl c-green" style="height:10px;"></div>
-          <div class="sec-pill sp-dept">10 Departments</div>
-          <div data-section="ceo-depts" style="position:relative; display:flex; flex-wrap:wrap; justify-content:center; gap:3px; max-width:320px;">
-            <div class="corp-conn" style="position:absolute; top:0; left:3%; right:3%; height:2px; background:#e07030;"></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="e411" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">Accounts &amp; Finance</div><div class="ctitle" data-sync="person">Mohit Kumar · CFO</div><div class="cext">Ext 131</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-card="interiors" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">Interiors</div><div class="ctitle">Pooja · PD – Fit Outs</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="ecorp09" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">Stores</div><div class="ctitle" data-sync="name">Manoj Kumar</div><div class="ctitle" data-sync="title">Mgr – Stores</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="e402" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">Procurement</div><div class="ctitle" data-sync="person">Mohd. Yousuff</div><div class="cext">Ext 192</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="e410" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">IT</div><div class="ctitle" data-sync="name">Abdullah</div><div class="ctitle" data-sync="title">Manager – IT</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="e23" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">BD Approvals</div><div class="ctitle" data-sync="name">Pooja Chavan</div><div class="ctitle" data-sync="title">Sr Exe – BD</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="e416" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">Commercials</div><div class="ctitle" data-sync="name">Lokesh Kumar</div><div class="ctitle" data-sync="title">Dir – Commercial</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="e98" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">Tender &amp; Estimation</div><div class="ctitle" data-sync="person">Rajesh · Dir BD &amp; Est.</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="e401" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">Cost Control / Comm.</div><div class="ctitle" data-sync="person">Satya Addala · CCO</div><div class="cext">Ext 205</div></div></div></div>
-            <div class="cd"><div class="cdv"></div><div class="card cv-dept" data-emp="e59" style="width:84px;"><div class="card-inner" style="padding:4px 6px 4px 9px;text-align:left;"><div class="cname">Planning</div><div class="ctitle" data-sync="name">Ghulsan Kumar</div><div class="ctitle" data-sync="title">Planning Mgr</div></div></div></div>
-          </div>
-        </div>
-
-      </div>
-    </div><!-- end CEO col -->
-
-    <!-- COLUMN C — LIAM (OPS) -->
-    <div class="col" style="flex:1; max-width:720px; min-width:480px;">
-
-      <div class="card cv-ops" data-emp="ecorp02" style="width:200px;">
-        <div class="card-inner" style="padding:9px 10px 9px 14px; text-align:center;">
-          <div class="clabel">Operations Director</div>
-          <div class="cname" style="font-size:calc(14px*var(--cfs,1));">Liam Column</div>
-          <div class="ctitle">Reports to: CEO</div>
-        </div>
-      </div>
-
-      <div class="vl c-purp" style="height:10px;"></div>
-
-      <!-- Three branches: PD | PM | DH -->
-      <div style="position:relative; display:flex; gap:0; align-items:flex-start; justify-content:center; width:100%;">
-        <div class="hl c-purp" style="position:absolute; top:0; left:5%; right:5%;"></div>
-
-        <!-- PROJECT DIRECTORS (6) -->
-        <div class="col" style="flex:2; max-width:360px;">
-          <div class="vl c-viol" style="height:10px;"></div>
-          <div class="sec-pill sp-pd">Project Directors</div>
-          <div data-section="ops-pd" style="position:relative; display:flex; flex-wrap:wrap; justify-content:center; gap:3px; max-width:350px;">
-            <div class="corp-conn" style="position:absolute; top:0; left:3%; right:3%; height:2px; background:#8040c0;"></div>
-            <div class="cpd"><div class="pdv"></div><div class="card cv-pd" data-emp="e418" style="width:104px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Gajendra Kumar</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">TBD</div></div></div></div>
-            <div class="cpd"><div class="pdv"></div><div class="card cv-pd" data-emp="e323" style="width:104px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Krishnamohan Rao</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Lagoon (53,61&amp;65)</div></div></div></div>
-            <div class="cpd"><div class="pdv"></div><div class="card cv-pd" data-emp="e378" style="width:104px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Punyamurthi</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">W Residences</div></div></div></div>
-            <div class="cpd"><div class="pdv"></div><div class="card cv-pd" data-emp="e189" style="width:104px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Philip Watson</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Bay 2</div></div></div></div>
-            <div class="cpd"><div class="pdv"></div><div class="card cv-pd" data-emp="e251" style="width:104px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Abdul Kader</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Deira Islands</div></div></div></div>
-            <div class="cpd"><div class="pdv"></div><div class="card cv-pd" data-emp="ecorp04" style="width:104px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Prabhu</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Eywa</div></div></div></div>
-          </div>
-        </div>
-
-        <!-- PROJECT MANAGERS (4) -->
-        <div class="col" style="flex:1.5; max-width:250px;">
-          <div class="vl c-teal" style="height:10px;"></div>
-          <div class="sec-pill sp-pm">Project Managers</div>
-          <div data-section="ops-pm" style="position:relative; display:flex; flex-wrap:wrap; justify-content:center; gap:3px; max-width:240px;">
-            <div class="corp-conn" style="position:absolute; top:0; left:4%; right:4%; height:2px; background:#1a8a8a;"></div>
-            <div class="cpm"><div class="pmv"></div><div class="card cv-pm" data-emp="e45" style="width:112px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Abu Jalala</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">13 Farm House</div></div></div></div>
-            <div class="cpm"><div class="pmv"></div><div class="card cv-pm" data-emp="e186" style="width:112px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Parth</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">Bay 2</div></div></div></div>
-            <div class="cpm"><div class="pmv"></div><div class="card cv-pm" data-emp="ecorp05" style="width:112px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Jagdeshian</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">Deira Islands</div></div></div></div>
-            <div class="cpm"><div class="pmv"></div><div class="card cv-pm" data-emp="e301" style="width:112px;"><div class="card-inner" style="padding:5px 7px 5px 11px;text-align:left;"><div class="cname" data-sync="name">Andrew Samuel / Akram</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">Eywa</div></div></div></div>
-          </div>
-        </div>
-
-        <!-- DEPT HEADS (3) -->
-        <div class="col" style="flex:1; max-width:200px;">
-          <div class="vl c-sky" style="height:10px;"></div>
-          <div class="sec-pill sp-dh">Dept. Heads</div>
-          <div data-section="ops-dh" style="position:relative; display:flex; flex-direction:column; align-items:center; gap:3px; width:168px;">
-            <div class="corp-conn" style="position:absolute; top:0; left:12%; right:12%; height:2px; background:#2a7cc0;"></div>
-            <div class="cdh"><div class="dhv"></div><div class="card cv-dh" data-emp="e390" style="width:160px;"><div class="card-inner" style="padding:5px 8px 5px 12px;text-align:left;"><div class="clabel">HSE</div><div class="cname" data-sync="name" style="font-size:calc(10px*var(--cfs,1));">Rockey Vibin</div><div class="ctitle" data-sync="title">Sr. HSE Manager</div></div></div></div>
-            <div class="cdh"><div class="dhv"></div><div class="card cv-dh" data-emp="e298" style="width:160px;"><div class="card-inner" style="padding:5px 8px 5px 12px;text-align:left;"><div class="clabel">Quality Control</div><div class="cname" data-sync="name" style="font-size:calc(10px*var(--cfs,1));">Anil</div><div class="ctitle" data-sync="title">QA/QC Manager</div></div></div></div>
-            <div class="cdh"><div class="dhv"></div><div class="card cv-dh" data-emp="e10" style="width:160px;"><div class="card-inner" style="padding:5px 8px 5px 12px;text-align:left;"><div class="clabel">Technical</div><div class="cname" data-sync="name" style="font-size:calc(10px*var(--cfs,1));">Anoop David</div><div class="ctitle" data-sync="title">Technical Manager</div></div></div></div>
-          </div>
-        </div>
-
-      </div><!-- end 3-branch -->
-    </div><!-- end Liam col -->
-
-  </div><!-- end level-2 row -->
-
-  <!-- ── INDIRECT NOTE ── -->
-  <div style="display:flex; justify-content:center; margin-top:14px;">
-    <div class="notebox" style="max-width:760px; text-align:center;">
-      <strong>⚡ Indirect / Dual Reporting Lines &nbsp;—&nbsp;</strong>
-      <strong>Ziya Akhtar (ED)</strong> reports directly to the <strong>Board of Directors</strong>, with an indirect functional line to <strong>Harish Wadkar (CEO)</strong>.&nbsp;&nbsp;
-      <strong>Rajesh Nair (HR Director)</strong> reports directly to <strong>Ziya Akhtar (ED)</strong>, with an indirect functional line to <strong>Harish Wadkar (CEO)</strong>.
-    </div>
-  </div>
-
-</div><!-- end .col tree -->
 </div><!-- end .content -->
-
-<!-- LEGEND -->
-<div class="legend-wrap">
-  <div class="legend-row">
-    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#0d1f42,#1a3a6e);"></div>Board of Directors</div>
-    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#124a70,#1e6ea0);"></div>Executive Director</div>
-    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#0e3f27,#1a6040);"></div>CEO</div>
-    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#0a3060,#1050a0);"></div>MBM Gulf</div>
-    <div class="li"><div class="ld" style="background:#fff; border:1px solid #e8a860;"></div>Departments (ED &amp; CEO)</div>
-    <div class="li"><div class="ld" style="background:linear-gradient(135deg,#3a1060,#6030a0);"></div>Operations Director</div>
-    <div class="li"><div class="ld" style="background:#faf5ff; border:1px solid #c8a0e8;"></div>Project Directors</div>
-    <div class="li"><div class="ld" style="background:#f0fafa; border:1px solid #80c8c8;"></div>Project Managers</div>
-    <div class="li"><div class="ld" style="background:#f0f6ff; border:1px solid #80a8d8;"></div>Dept. Heads (Ops)</div>
-    <div class="li"><div class="ld" style="background:#fff5f8; border:1px solid #f0a0c0;"></div>HR Director</div>
-    <div class="li"><div class="ld" style="background:#fdf8ff; border:1px dashed #b080d0;"></div>PA / Secretary</div>
-    <div class="li"><div class="ld-dash"></div>Indirect / dotted reporting</div>
-  </div>
-  <div class="legend-footer">For internal use only &nbsp;·&nbsp; Confidential &nbsp;·&nbsp; Click any card to open &amp; edit the employee</div>
-</div>
-
 </div><!-- end .page -->
 `;
 
@@ -692,25 +456,20 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Build one HTML string for an added card so it matches its section.
+  // Build one HTML string for an added card so it matches the photo-card style.
   const addedCardHtml = (c: CorporateAddedCard, sec: typeof SECTIONS[number]) => {
     const inner =
-      `<div class="card-inner" style="padding:5px 8px 5px 11px;text-align:left;">` +
+      `<div class="card-inner">` +
       (c.label ? `<div class="clabel">${escapeHtml(c.label)}</div>` : '') +
       (c.line1 ? `<div class="cname">${escapeHtml(c.line1)}</div>` : '') +
       (c.line2 ? `<div class="ctitle">${escapeHtml(c.line2)}</div>` : '') +
       `</div>`;
-    const widthStyle = c.width || sec.width ? `width:${c.width || sec.width}px;` : 'flex:1;';
-    const card = `<div class="card ${c.variant} corp-added" data-card="${c.key}" data-added="1" style="${widthStyle}">${inner}</div>`;
-    if (sec.wrap === 'plain') {
-      return `<div class="corp-added" style="display:flex; align-items:center; gap:0; margin-top:3px;"><div style="width:12px; height:2px; background:#e07030; flex-shrink:0;"></div>${card}</div>`;
-    }
-    return `<div class="${sec.wrap} corp-added"><div class="${sec.stub}"></div>${card}</div>`;
+    return `<div class="card ${c.variant} corp-added" data-card="${c.key}" data-added="1" style="width:${c.width || sec.width}px;">${inner}</div>`;
   };
 
-  // Single reconcile pass: live name/title sync, then per-card overrides, then
-  // (re)create added cards, then selection highlight. Idempotent — added nodes
-  // are tagged .corp-added and cleared at the top so re-runs don't duplicate.
+  // Single reconcile pass: inject photo slots, live name/title sync, per-card
+  // overrides, (re)create added cards, selection highlight, then draw edges.
+  // Idempotent — added nodes are tagged .corp-added and cleared at the top.
   useLayoutEffect(() => {
     const root = wrapperRef.current;
     if (!root) return;
@@ -718,9 +477,9 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
     // 0. Clear previously injected added cards + connector layer.
     root.querySelectorAll('.corp-added, .corp-edges').forEach(el => el.remove());
 
-    // 0b. Ensure every person card has a (blank) photo avatar on its left.
-    // Idempotent — guarded by .has-photo so re-runs don't duplicate or re-wrap.
-    root.querySelectorAll<HTMLElement>('.card[data-emp]').forEach(card => {
+    // Give a card a photo slot: wrap its existing text into .cbody and prepend a
+    // .cphoto. Idempotent — guarded by .has-photo so re-runs don't re-wrap.
+    const ensurePhoto = (card: HTMLElement) => {
       const inner = card.querySelector<HTMLElement>('.card-inner');
       if (!inner || inner.classList.contains('has-photo')) return;
       const body = document.createElement('div');
@@ -730,15 +489,16 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       photo.className = 'cphoto';
       inner.append(photo, body);
       inner.classList.add('has-photo');
-    });
+    };
 
-    // 1. Live sync of names/titles from employees.
+    // 0b. Every card gets a photo slot (blank placeholder by default).
+    root.querySelectorAll<HTMLElement>('.card').forEach(ensurePhoto);
+
+    // 1. Live sync of names/titles from employees + fill the photo from photoUrl.
     const byId = new Map(employees.map(e => [e.id, e]));
     root.querySelectorAll<HTMLElement>('[data-emp]').forEach(card => {
       const e = byId.get(card.getAttribute('data-emp') || '');
       if (!e) return;
-      // Fill the avatar with the employee's headshot when set; otherwise it
-      // stays the blank placeholder. Reset first so a cleared URL reverts.
       const photo = card.querySelector<HTMLElement>('.cphoto');
       if (photo) photo.style.backgroundImage = e.photoUrl ? `url("${e.photoUrl}")` : '';
       card.querySelectorAll<HTMLElement>('[data-sync]').forEach(el => {
@@ -753,18 +513,18 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
     root.querySelectorAll<HTMLElement>('.card').forEach(card => {
       if (card.classList.contains('corp-added')) return;
       const key = card.getAttribute('data-card') || card.getAttribute('data-emp');
-      const wrapEl = (card.closest('.cd,.cpd,.cpm,.cdh,.cbrow') as HTMLElement) || card;
       // reset
-      card.style.background = '';
-      wrapEl.style.display = '';
+      card.style.display = '';
       card.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle,.csub,.cpill,.cext').forEach(t => { t.style.color = ''; });
+      const photo = card.querySelector<HTMLElement>('.cphoto');
+      if (photo) photo.style.backgroundColor = ''; // revert any prior photo-color override (keeps the headshot image)
       if (!key) return;
       card.style.transform = '';
       card.style.zIndex = '';
       const ov = cards[key];
       if (!ov) return;
-      if (ov.hidden) { wrapEl.style.display = 'none'; return; }
-      if (ov.bg) card.style.background = ov.bg;
+      if (ov.hidden) { card.style.display = 'none'; return; }
+      if (ov.bg && photo) { photo.style.backgroundColor = ov.bg; }
       if (ov.fg) card.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle,.csub,.cpill,.cext').forEach(t => { t.style.color = ov.fg!; });
       if (ov.dx || ov.dy) { card.style.transform = `translate(${ov.dx ?? 0}px, ${ov.dy ?? 0}px)`; card.style.zIndex = '20'; }
       const set = (sel: string, v?: string) => { if (v != null) { const el = card.querySelector(sel); if (el) el.textContent = v; } };
@@ -782,7 +542,9 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       host.insertAdjacentHTML('beforeend', addedCardHtml(c, sec));
       const el = host.querySelector<HTMLElement>(`[data-card="${c.key}"]`);
       if (el) {
-        if (c.bg) el.style.background = c.bg;
+        ensurePhoto(el);
+        const photo = el.querySelector<HTMLElement>('.cphoto');
+        if (c.bg && photo) photo.style.backgroundColor = c.bg;
         if (c.fg) el.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle').forEach(t => { t.style.color = c.fg!; });
         if (c.dx || c.dy) { el.style.transform = `translate(${c.dx ?? 0}px, ${c.dy ?? 0}px)`; el.style.zIndex = '20'; }
       }
@@ -806,13 +568,9 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       const pr = page.getBoundingClientRect();
       const cardEl = (key: string) =>
         page.querySelector<HTMLElement>(`.card[data-card="${key}"], .card[data-emp="${key}"]`);
-      const visible = (el: HTMLElement) => {
-        const w = (el.closest('.cd,.cpd,.cpm,.cdh,.cbrow') as HTMLElement) || el;
-        return w.style.display !== 'none';
-      };
       const box = (key: string) => {
         const el = cardEl(key);
-        if (!el || !visible(el)) return null;
+        if (!el || el.style.display === 'none') return null;
         const r = el.getBoundingClientRect();
         return { x: r.left - pr.left, y: r.top - pr.top, w: r.width, h: r.height };
       };
@@ -827,17 +585,21 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
           const sx = bCx >= aCx ? a.x + a.w : a.x;
           const tx = bCx >= aCx ? b.x : b.x + b.w;
           const sy = a.y + a.h / 2, ty = b.y + b.h / 2;
-          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${tx} ${ty}" stroke="#b080d0" stroke-width="1.6" stroke-dasharray="4 3" fill="none" />`);
+          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${tx} ${ty}" stroke="#cbd5e1" stroke-width="1.4" stroke-dasharray="4 3" fill="none" />`);
         } else {
+          // Photos sit near the top of each card — aim the connector at the
+          // photo centre (~36px down) rather than the very top of the card box.
+          const childTop = b.y + 8;
           const sx = a.x + a.w / 2, sy = a.y + a.h;
-          const tx = b.x + b.w / 2, ty = b.y;
+          const tx = b.x + b.w / 2, ty = childTop;
           const midY = sy + (ty - sy) / 2;
-          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}" stroke="#64748b" stroke-width="1.6" fill="none" />`);
+          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}" stroke="#cbd5e1" stroke-width="1.6" fill="none" marker-end="url(#corp-arrow)" />`);
         }
       }
+      const defs = `<defs><marker id="corp-arrow" markerWidth="8" markerHeight="8" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#cbd5e1" /></marker></defs>`;
       const w = page.scrollWidth, h = page.scrollHeight;
       page.insertAdjacentHTML('afterbegin',
-        `<svg class="corp-edges" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths.join('')}</svg>`);
+        `<svg class="corp-edges" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${defs}${paths.join('')}</svg>`);
     }
   }, [employees, cards, added, selectedKey, edges, font, linkSrc, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -929,7 +691,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
   const capture = async (): Promise<HTMLCanvasElement | null> => {
     const page = wrapperRef.current?.querySelector<HTMLElement>('.page');
     if (!page) return null;
-    return html2canvas(page, { backgroundColor: '#f4f6fa', scale: 2, useCORS: true, logging: false });
+    return html2canvas(page, { backgroundColor: '#ffffff', scale: 2, useCORS: true, logging: false });
   };
 
   useImperativeHandle(ref, () => ({
@@ -1078,7 +840,7 @@ function escapeHtml(s: string) {
   return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] || c));
 }
 
-// Panel to edit the selected card's colors and text lines.
+// Panel to edit the selected card's photo color and text lines.
 function CardEditorPanel({ title, override, onPatch, onDelete, onClose }: {
   title: string;
   override?: { bg?: string; fg?: string; label?: string; line1?: string; line2?: string; dx?: number; dy?: number };
@@ -1096,16 +858,16 @@ function CardEditorPanel({ title, override, onPatch, onDelete, onClose }: {
 
       <label className="block text-slate-500 mb-1">Label (small caps)</label>
       <input value={ov.label ?? ''} placeholder="(unchanged)" onChange={e => onPatch({ label: e.target.value })} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
-      <label className="block text-slate-500 mb-1">Title line</label>
+      <label className="block text-slate-500 mb-1">Name line</label>
       <input value={ov.line1 ?? ''} placeholder="(unchanged)" onChange={e => onPatch({ line1: e.target.value })} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
-      <label className="block text-slate-500 mb-1">Subtitle line</label>
+      <label className="block text-slate-500 mb-1">Title line</label>
       <input value={ov.line2 ?? ''} placeholder="(unchanged)" onChange={e => onPatch({ line2: e.target.value })} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
 
       <div className="flex items-center gap-3 mb-3">
         <div>
-          <label className="block text-slate-500 mb-1">Background</label>
+          <label className="block text-slate-500 mb-1">Photo color</label>
           <div className="flex items-center gap-1">
-            <input type="color" value={ov.bg ?? '#ffffff'} onChange={e => onPatch({ bg: e.target.value })} className="w-8 h-7 rounded border border-slate-200 cursor-pointer" />
+            <input type="color" value={ov.bg ?? '#e2e8f0'} onChange={e => onPatch({ bg: e.target.value })} className="w-8 h-7 rounded border border-slate-200 cursor-pointer" />
             <button onClick={() => onPatch({ bg: null })} className="text-slate-400 hover:text-red-500" title="Clear"><X size={12} /></button>
           </div>
         </div>
@@ -1150,9 +912,9 @@ function AddCardPanel({ onAdd, onClose }: { onAdd: (c: CorporateAddedCard) => vo
       </select>
       <label className="block text-slate-500 mb-1">Label (small caps)</label>
       <input value={label} onChange={e => setLabel(e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
-      <label className="block text-slate-500 mb-1">Title line</label>
+      <label className="block text-slate-500 mb-1">Name line</label>
       <input value={line1} onChange={e => setLine1(e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
-      <label className="block text-slate-500 mb-1">Subtitle line</label>
+      <label className="block text-slate-500 mb-1">Title line</label>
       <input value={line2} onChange={e => setLine2(e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-3" />
       <button
         onClick={() => onAdd({ key: `add-${Date.now().toString(36)}`, section, variant: sec.variant, width: sec.width || undefined, label: label || undefined, line1: line1 || undefined, line2: line2 || undefined })}
