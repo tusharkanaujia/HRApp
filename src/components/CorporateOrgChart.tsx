@@ -81,6 +81,11 @@ const niceTitle = (s: string) =>
     return w.toLowerCase().replace(/(^|[-/])([a-z])/g, (_m, p, c) => p + c.toUpperCase());
   }).join(' ');
 
+// First letters (max 2) of the alphabetic words — the fallback avatar shown in
+// a card's photo frame when there is no headshot.
+const initialsOf = (s: string) =>
+  (s || '').trim().split(/\s+/).filter(w => /[a-z]/i.test(w[0] || '')).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+
 export interface CorporateOrgChartHandle {
   exportToPng: (filename: string) => Promise<void>;
   exportToPdf: (filename: string) => Promise<void>;
@@ -121,7 +126,7 @@ const CSS = `
 
 /* ── PAGE SHELL ── */
 .corp-org .page {
-  background: #ffffff;
+  background: #edf0f5;
   border-radius: 18px;
   box-shadow: 0 18px 50px rgba(15,23,42,.12);
   max-width: 1640px;
@@ -153,10 +158,10 @@ const CSS = `
 /* ── CONTENT ── */
 .corp-org .content { padding: 4px 30px 6px; position: relative; }
 .corp-org .tier { display: flex; align-items: flex-start; justify-content: center; }
-.corp-org .cols { display: flex; align-items: flex-start; justify-content: center; gap: 26px; margin-top: 58px; }
-.corp-org .col { display: flex; flex-direction: column; align-items: center; gap: 12px; flex: 1; max-width: 460px; }
-.corp-org .grid { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: 20px 16px; width: 100%; }
-.corp-org .grp { margin-top: 18px; } /* spacing above a section pill that follows a grid */
+.corp-org .cols { display: flex; align-items: flex-start; justify-content: center; gap: 26px; margin-top: 36px; }
+.corp-org .col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; max-width: 470px; }
+.corp-org .grid { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: 6px 16px; width: 100%; }
+.corp-org .grp { margin-top: 10px; } /* spacing above a section pill that follows a grid */
 
 /* ── CONNECTOR LAYER ── */
 .corp-org .corp-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; overflow: visible; }
@@ -167,49 +172,54 @@ const CSS = `
 .corp-org.linking .card { cursor: crosshair !important; }
 .corp-org .card.corp-link-src { outline: 2px solid #22c55e !important; outline-offset: 3px; border-radius: 12px; }
 
-/* ── CARD (vertical photo card) ── */
-.corp-org .card { position: relative; display: flex; flex-direction: column; align-items: center; width: 124px; flex-shrink: 0; background: transparent;
+/* ── CARD (white box, colored top bar, circular avatar overlapping the top) ── */
+.corp-org .card { position: relative; display: flex; flex-direction: column; align-items: center; width: 138px; flex-shrink: 0;
+  background: #fff; border-radius: 13px; border-top: 4px solid var(--accent);
+  box-shadow: 0 6px 16px rgba(15,23,42,.10);
+  padding: 6px 10px 12px; margin-top: 40px;
   --a1: #a78bfa; --a2: #7c3aed; --accent: #7c3aed; --pill: #f1ecff; }
-.corp-org .card[data-emp] { cursor: pointer; }
+.corp-org .card[data-emp] { cursor: pointer; transition: box-shadow .12s, transform .12s; }
+.corp-org .card[data-emp]:hover { box-shadow: 0 12px 26px rgba(15,23,42,.16); }
 .corp-org .card-inner { display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%; }
-.corp-org .card-inner.has-photo { gap: 9px; }
+.corp-org .card-inner.has-photo { gap: 6px; }
 
-/* Photo: rounded square with an offset gradient "card" behind it. */
+/* Avatar: white-ringed circle pulled up to overlap the card's top edge. Shows
+   the branch gradient + initials by default; a headshot (.has-img) covers it. */
 .corp-org .cphoto {
-  width: 62px; height: 62px; border-radius: 16px;
-  background: #e2e8f0 center/cover no-repeat;
-  position: relative; z-index: 1;
-  box-shadow: 0 7px 16px rgba(15,23,42,.16);
-}
-.corp-org .cphoto::before {
-  content: ''; position: absolute; inset: 0; border-radius: 16px; z-index: -1;
+  width: 60px; height: 60px; border-radius: 50%; margin-top: -40px;
   background: linear-gradient(140deg, var(--a1), var(--a2));
-  transform: translate(-6px, 7px);
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  border: 4px solid #fff; position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 10px rgba(15,23,42,.18);
 }
+.corp-org .cinit {
+  font-size: calc(17px * var(--cfs,1)); font-weight: 700; color: #fff; letter-spacing: .5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18); user-select: none;
+}
+.corp-org .cphoto.has-img .cinit { display: none; }
 
 .corp-org .cbody { display: flex; flex-direction: column; align-items: center; }
 .corp-org .clabel { font-size: calc(7.5px * var(--cfs,1)); font-weight: 800; letter-spacing: .7px; text-transform: uppercase; color: var(--accent); margin-bottom: 1px; }
-.corp-org .cname  { font-size: calc(12.5px * var(--cfs,1)); font-weight: 700; color: #1f2937; line-height: 1.22; }
-.corp-org .ctitle { font-size: calc(8px * var(--cfs,1)); font-weight: 600; letter-spacing: .8px; text-transform: uppercase; color: #9aa6b6; margin-top: 4px; }
-.corp-org .cbody .ctitle:first-of-type::before { content: '— '; color: #cbd5e1; }
-.corp-org .cbody .ctitle:first-of-type::after  { content: ' —'; color: #cbd5e1; }
+.corp-org .cname  { font-size: calc(12px * var(--cfs,1)); font-weight: 700; color: #1f2937; line-height: 1.25; }
+.corp-org .ctitle { font-size: calc(8.5px * var(--cfs,1)); font-weight: 500; color: #94a3b8; margin-top: 3px; line-height: 1.3; }
 .corp-org .csub   { font-size: calc(7.5px * var(--cfs,1)); color: #b9c2cf; margin-top: 3px; font-style: italic; }
 .corp-org .cpill  { display: inline-block; font-size: calc(7.5px * var(--cfs,1)); font-weight: 700; color: var(--accent); background: var(--pill); padding: 2px 8px; border-radius: 10px; margin-top: 6px; letter-spacing: .2px; }
 .corp-org .cext   { font-size: calc(7px * var(--cfs,1)); color: #c0c9d6; margin-top: 2px; }
 
 /* ── PER-BRANCH ACCENTS ── */
-/* Top management — bigger photos + stronger accent. */
-.corp-org .cv-board { width: 200px; --a1: #818cf8; --a2: #4f46e5; --accent: #4338ca; --pill: #eef0ff; }
-.corp-org .cv-board .cphoto { width: 96px; height: 96px; border-radius: 22px; }
-.corp-org .cv-board .cphoto::before { transform: translate(-9px, 10px); border-radius: 22px; }
+/* Top management — bigger avatars + stronger accent. */
+.corp-org .cv-board { width: 210px; margin-top: 60px; --a1: #818cf8; --a2: #4f46e5; --accent: #4338ca; --pill: #eef0ff; }
+.corp-org .cv-board .cphoto { width: 92px; height: 92px; margin-top: -58px; }
+.corp-org .cv-board .cinit { font-size: calc(30px * var(--cfs,1)); }
 .corp-org .cv-board .cname { font-size: calc(17px * var(--cfs,1)); }
 
-.corp-org .cv-ed  { width: 168px; --a1: #a78bfa; --a2: #7c3aed; --accent: #6d28d9; --pill: #f1ecff; }
-.corp-org .cv-ceo { width: 168px; --a1: #60a5fa; --a2: #2563eb; --accent: #1d4ed8; --pill: #e7efff; }
-.corp-org .cv-ops { width: 168px; --a1: #34d399; --a2: #059669; --accent: #047857; --pill: #e3f7ef; }
-.corp-org .cv-ed .cphoto, .corp-org .cv-ceo .cphoto, .corp-org .cv-ops .cphoto { width: 80px; height: 80px; border-radius: 20px; }
-.corp-org .cv-ed .cphoto::before, .corp-org .cv-ceo .cphoto::before, .corp-org .cv-ops .cphoto::before { transform: translate(-8px, 9px); border-radius: 20px; }
-.corp-org .cv-ed .cname, .corp-org .cv-ceo .cname, .corp-org .cv-ops .cname { font-size: calc(14.5px * var(--cfs,1)); }
+.corp-org .cv-ed  { width: 176px; margin-top: 50px; --a1: #a78bfa; --a2: #7c3aed; --accent: #6d28d9; --pill: #f1ecff; }
+.corp-org .cv-ceo { width: 176px; margin-top: 50px; --a1: #60a5fa; --a2: #2563eb; --accent: #1d4ed8; --pill: #e7efff; }
+.corp-org .cv-ops { width: 176px; margin-top: 50px; --a1: #34d399; --a2: #059669; --accent: #047857; --pill: #e3f7ef; }
+.corp-org .cv-ed .cphoto, .corp-org .cv-ceo .cphoto, .corp-org .cv-ops .cphoto { width: 76px; height: 76px; margin-top: -50px; }
+.corp-org .cv-ed .cinit, .corp-org .cv-ceo .cinit, .corp-org .cv-ops .cinit { font-size: calc(22px * var(--cfs,1)); }
+.corp-org .cv-ed .cname, .corp-org .cv-ceo .cname, .corp-org .cv-ops .cname { font-size: calc(14px * var(--cfs,1)); }
 
 /* Section-scoped accents */
 .corp-org [data-section="ed-depts"] .card  { --a1: #a78bfa; --a2: #7c3aed; --accent: #6d28d9; --pill: #f1ecff; }
@@ -219,11 +229,10 @@ const CSS = `
 .corp-org [data-section="ops-dh"] .card    { --a1: #38bdf8; --a2: #0284c7; --accent: #0369a1; --pill: #e2f2fd; }
 .corp-org .cv-mbm { --a1: #60a5fa; --a2: #1d4ed8; --accent: #1e40af; --pill: #e7efff; }
 .corp-org .cv-hr  { --a1: #f472b6; --a2: #db2777; --accent: #be185d; --pill: #fde7f1; }
-.corp-org .cv-side { width: 108px; --a1: #cbd5e1; --a2: #94a3b8; --accent: #64748b; --pill: #eef2f7; }
-.corp-org .cv-side .cphoto { width: 44px; height: 44px; border-radius: 12px; }
-.corp-org .cv-side .cphoto::before { transform: translate(-4px, 5px); border-radius: 12px; }
+.corp-org .cv-side { width: 120px; margin-top: 30px; --a1: #cbd5e1; --a2: #94a3b8; --accent: #94a3b8; --pill: #eef2f7; }
+.corp-org .cv-side .cphoto { width: 42px; height: 42px; margin-top: -30px; }
+.corp-org .cv-side .cinit { font-size: calc(12px * var(--cfs,1)); }
 .corp-org .cv-side .cname { font-size: calc(10px * var(--cfs,1)); }
-.corp-org .cv-side .ctitle:first-of-type::before, .corp-org .cv-side .ctitle:first-of-type::after { content: ''; }
 
 /* ── SECTION PILLS (gradient border) ── */
 .corp-org .sec-pill {
@@ -487,6 +496,9 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       while (inner.firstChild) body.appendChild(inner.firstChild);
       const photo = document.createElement('div');
       photo.className = 'cphoto';
+      const init = document.createElement('span');
+      init.className = 'cinit';
+      photo.appendChild(init);
       inner.append(photo, body);
       inner.classList.add('has-photo');
     };
@@ -494,13 +506,11 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
     // 0b. Every card gets a photo slot (blank placeholder by default).
     root.querySelectorAll<HTMLElement>('.card').forEach(ensurePhoto);
 
-    // 1. Live sync of names/titles from employees + fill the photo from photoUrl.
+    // 1. Live sync of names/titles from employees.
     const byId = new Map(employees.map(e => [e.id, e]));
     root.querySelectorAll<HTMLElement>('[data-emp]').forEach(card => {
       const e = byId.get(card.getAttribute('data-emp') || '');
       if (!e) return;
-      const photo = card.querySelector<HTMLElement>('.cphoto');
-      if (photo) photo.style.backgroundImage = e.photoUrl ? `url("${e.photoUrl}")` : '';
       card.querySelectorAll<HTMLElement>('[data-sync]').forEach(el => {
         const mode = el.getAttribute('data-sync');
         if (mode === 'name') el.textContent = niceName(e.name);
@@ -509,28 +519,38 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       });
     });
 
-    // 2. Per base-card overrides. Always reset first so cleared fields revert.
+    // 2. Per-card avatar + overrides. Reset everything first so cleared fields
+    //    revert. The photo frame shows the employee headshot when set, otherwise
+    //    a branch-coloured initials avatar.
     root.querySelectorAll<HTMLElement>('.card').forEach(card => {
       if (card.classList.contains('corp-added')) return;
       const key = card.getAttribute('data-card') || card.getAttribute('data-emp');
+      const emp = byId.get(card.getAttribute('data-emp') || '');
+      const photo = card.querySelector<HTMLElement>('.cphoto');
       // reset
       card.style.display = '';
-      card.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle,.csub,.cpill,.cext').forEach(t => { t.style.color = ''; });
-      const photo = card.querySelector<HTMLElement>('.cphoto');
-      if (photo) photo.style.backgroundColor = ''; // revert any prior photo-color override (keeps the headshot image)
-      if (!key) return;
       card.style.transform = '';
       card.style.zIndex = '';
+      card.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle,.csub,.cpill,.cext').forEach(t => { t.style.color = ''; });
+      if (photo) { photo.style.backgroundColor = ''; photo.style.backgroundImage = ''; photo.classList.remove('has-img'); }
+      // avatar: initials from the person's name (or the card title for non-people)
+      const init = card.querySelector<HTMLElement>('.cinit');
+      if (init) init.textContent = initialsOf(emp ? niceName(emp.name) : (card.querySelector('.cname')?.textContent || ''));
+      // headshot wins over initials when a photoUrl is set
+      if (photo && emp?.photoUrl) { photo.style.backgroundImage = `url("${emp.photoUrl}")`; photo.classList.add('has-img'); }
+      if (!key) return;
       const ov = cards[key];
       if (!ov) return;
       if (ov.hidden) { card.style.display = 'none'; return; }
-      if (ov.bg && photo) { photo.style.backgroundColor = ov.bg; }
+      // photo-color override → solid avatar tint (drop the gradient, keep initials)
+      if (ov.bg && photo) { photo.style.backgroundColor = ov.bg; photo.style.backgroundImage = 'none'; }
       if (ov.fg) card.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle,.csub,.cpill,.cext').forEach(t => { t.style.color = ov.fg!; });
       if (ov.dx || ov.dy) { card.style.transform = `translate(${ov.dx ?? 0}px, ${ov.dy ?? 0}px)`; card.style.zIndex = '20'; }
       const set = (sel: string, v?: string) => { if (v != null) { const el = card.querySelector(sel); if (el) el.textContent = v; } };
       set('.clabel', ov.label);
       set('.cname', ov.line1);
       set('.ctitle', ov.line2);
+      if (init && ov.line1) init.textContent = initialsOf(ov.line1); // keep avatar in sync with a renamed card
     });
 
     // 3. (Re)create added cards in their sections.
@@ -544,7 +564,9 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       if (el) {
         ensurePhoto(el);
         const photo = el.querySelector<HTMLElement>('.cphoto');
-        if (c.bg && photo) photo.style.backgroundColor = c.bg;
+        const init = el.querySelector<HTMLElement>('.cinit');
+        if (init) init.textContent = initialsOf(c.line1 || el.querySelector('.cname')?.textContent || '');
+        if (c.bg && photo) { photo.style.backgroundColor = c.bg; photo.style.backgroundImage = 'none'; }
         if (c.fg) el.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle').forEach(t => { t.style.color = c.fg!; });
         if (c.dx || c.dy) { el.style.transform = `translate(${c.dx ?? 0}px, ${c.dy ?? 0}px)`; el.style.zIndex = '20'; }
       }
@@ -587,19 +609,17 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
           const sy = a.y + a.h / 2, ty = b.y + b.h / 2;
           paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${tx} ${ty}" stroke="#cbd5e1" stroke-width="1.4" stroke-dasharray="4 3" fill="none" />`);
         } else {
-          // Photos sit near the top of each card — aim the connector at the
-          // photo centre (~36px down) rather than the very top of the card box.
-          const childTop = b.y + 8;
+          // Elbow from the parent card's bottom to the child card's top edge
+          // (where the colour bar + overlapping avatar sit). No arrowhead.
           const sx = a.x + a.w / 2, sy = a.y + a.h;
-          const tx = b.x + b.w / 2, ty = childTop;
+          const tx = b.x + b.w / 2, ty = b.y;
           const midY = sy + (ty - sy) / 2;
-          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}" stroke="#cbd5e1" stroke-width="1.6" fill="none" marker-end="url(#corp-arrow)" />`);
+          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}" stroke="#c2cad6" stroke-width="1.4" fill="none" />`);
         }
       }
-      const defs = `<defs><marker id="corp-arrow" markerWidth="8" markerHeight="8" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#cbd5e1" /></marker></defs>`;
       const w = page.scrollWidth, h = page.scrollHeight;
       page.insertAdjacentHTML('afterbegin',
-        `<svg class="corp-edges" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${defs}${paths.join('')}</svg>`);
+        `<svg class="corp-edges" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths.join('')}</svg>`);
     }
   }, [employees, cards, added, selectedKey, edges, font, linkSrc, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
