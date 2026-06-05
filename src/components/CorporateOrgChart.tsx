@@ -123,6 +123,10 @@ const CSS = `
 .corp-org.editing .card { outline: 1px dashed transparent; outline-offset: 3px; border-radius: 12px; cursor: move; }
 .corp-org.editing .card:hover { outline-color: #94a3b8; }
 .corp-org .card.corp-selected { outline: 2px solid #2563eb !important; outline-offset: 3px; border-radius: 12px; }
+/* Section pills are draggable too (move the "Executive Director" etc. labels). */
+.corp-org.editing .sec-pill[data-pill] { cursor: move; outline: 1px dashed transparent; outline-offset: 2px; }
+.corp-org.editing .sec-pill[data-pill]:hover { outline-color: #94a3b8; }
+.corp-org .sec-pill.corp-selected { outline: 2px solid #2563eb !important; outline-offset: 2px; }
 
 /* ── PAGE SHELL ── */
 .corp-org .page {
@@ -300,7 +304,7 @@ const CHART_HTML = `
 
     <!-- COLUMN A — EXECUTIVE DIRECTOR -->
     <div class="col">
-      <div class="sec-pill sp-ed">Executive Director</div>
+      <div class="sec-pill sp-ed" data-pill="pill-ed">Executive Director</div>
       <div class="card cv-ed" data-emp="e351">
         <div class="card-inner">
           <div class="cname" data-sync="name">Ziya Akhtar</div>
@@ -315,7 +319,7 @@ const CHART_HTML = `
         </div>
       </div>
 
-      <div class="sec-pill sp-ed grp">Depts. reporting to ED</div>
+      <div class="sec-pill sp-ed grp" data-pill="pill-ed-depts">Depts. reporting to ED</div>
       <div class="grid" data-section="ed-depts">
         <div class="card cv-dept" data-card="pmv"><div class="card-inner"><div class="cname">PMV &amp; Logistics</div></div></div>
         <div class="card cv-dept" data-emp="e154"><div class="card-inner"><div class="cname">Factory</div><div class="ctitle" data-sync="person">Fadi · Div. Manager</div></div></div>
@@ -327,7 +331,7 @@ const CHART_HTML = `
 
     <!-- COLUMN B — CEO -->
     <div class="col">
-      <div class="sec-pill sp-ceo">Chief Executive Officer</div>
+      <div class="sec-pill sp-ceo" data-pill="pill-ceo">Chief Executive Officer</div>
       <div class="card cv-ceo" data-emp="ecorp01">
         <div class="card-inner">
           <div class="cname" data-sync="name">Harish Wadkar</div>
@@ -342,12 +346,12 @@ const CHART_HTML = `
         </div>
       </div>
 
-      <div class="sec-pill sp-mbm grp">MBM Gulf</div>
+      <div class="sec-pill sp-mbm grp" data-pill="pill-mbm">MBM Gulf</div>
       <div class="grid">
         <div class="card cv-mbm" data-emp="e407"><div class="card-inner"><div class="clabel">General Manager</div><div class="cname" data-sync="name">Jai Shankar</div><div class="ctitle">MBM Gulf</div></div></div>
       </div>
 
-      <div class="sec-pill sp-dept grp">10 Departments</div>
+      <div class="sec-pill sp-dept grp" data-pill="pill-ceo-depts">10 Departments</div>
       <div class="grid" data-section="ceo-depts">
         <div class="card cv-dept" data-emp="e411"><div class="card-inner"><div class="cname">Accounts &amp; Finance</div><div class="ctitle" data-sync="person">Mohit Kumar · CFO</div><div class="cext">Ext 131</div></div></div>
         <div class="card cv-dept" data-card="interiors"><div class="card-inner"><div class="cname">Interiors</div><div class="ctitle">Pooja · PD – Fit Outs</div></div></div>
@@ -364,7 +368,7 @@ const CHART_HTML = `
 
     <!-- COLUMN C — OPERATIONS DIRECTOR -->
     <div class="col">
-      <div class="sec-pill sp-ops">Operations Director</div>
+      <div class="sec-pill sp-ops" data-pill="pill-ops">Operations Director</div>
       <div class="card cv-ops" data-emp="ecorp02">
         <div class="card-inner">
           <div class="cname">Liam Column</div>
@@ -373,7 +377,7 @@ const CHART_HTML = `
         </div>
       </div>
 
-      <div class="sec-pill sp-pd grp">Project Directors</div>
+      <div class="sec-pill sp-pd grp" data-pill="pill-pd">Project Directors</div>
       <div class="grid" data-section="ops-pd">
         <div class="card cv-pd" data-emp="e418"><div class="card-inner"><div class="cname" data-sync="name">Gajendra Kumar</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">TBD</div></div></div>
         <div class="card cv-pd" data-emp="e323"><div class="card-inner"><div class="cname" data-sync="name">Krishnamohan Rao</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Lagoon (53,61&amp;65)</div></div></div>
@@ -383,7 +387,7 @@ const CHART_HTML = `
         <div class="card cv-pd" data-emp="ecorp04"><div class="card-inner"><div class="cname" data-sync="name">Prabhu</div><div class="ctitle" data-sync="title">Project Director</div><div class="cpill">Eywa</div></div></div>
       </div>
 
-      <div class="sec-pill sp-pm grp">Project Managers</div>
+      <div class="sec-pill sp-pm grp" data-pill="pill-pm">Project Managers</div>
       <div class="grid" data-section="ops-pm">
         <div class="card cv-pm" data-emp="e45"><div class="card-inner"><div class="cname" data-sync="name">Abu Jalala</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">13 Farm House</div></div></div>
         <div class="card cv-pm" data-emp="e186"><div class="card-inner"><div class="cname" data-sync="name">Parth</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">Bay 2</div></div></div>
@@ -391,7 +395,7 @@ const CHART_HTML = `
         <div class="card cv-pm" data-emp="e301"><div class="card-inner"><div class="cname" data-sync="name">Andrew Samuel / Akram</div><div class="ctitle" data-sync="title">Project Manager</div><div class="cpill">Eywa</div></div></div>
       </div>
 
-      <div class="sec-pill sp-dh grp">Dept. Heads</div>
+      <div class="sec-pill sp-dh grp" data-pill="pill-dh">Dept. Heads</div>
       <div class="grid" data-section="ops-dh">
         <div class="card cv-dh" data-emp="e390"><div class="card-inner"><div class="clabel">HSE</div><div class="cname" data-sync="name">Rockey Vibin</div><div class="ctitle" data-sync="title">Sr. HSE Manager</div></div></div>
         <div class="card cv-dh" data-emp="e298"><div class="card-inner"><div class="clabel">Quality Control</div><div class="cname" data-sync="name">Anil</div><div class="ctitle" data-sync="title">QA/QC Manager</div></div></div>
@@ -572,10 +576,28 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       }
     }
 
+    // 3b. Section pills (the "Executive Director" etc. labels) reuse the card
+    //     override map for move (dx/dy), rename (line1), colour (fg) and hide.
+    root.querySelectorAll<HTMLElement>('.sec-pill[data-pill]').forEach(pill => {
+      if (pill.dataset.orig == null) pill.dataset.orig = pill.textContent || '';
+      // reset
+      pill.style.transform = '';
+      pill.style.zIndex = '';
+      pill.style.color = '';
+      pill.style.display = '';
+      pill.textContent = pill.dataset.orig;
+      const ov = cards[pill.getAttribute('data-pill') || ''];
+      if (!ov) return;
+      if (ov.hidden) { pill.style.display = 'none'; return; }
+      if (ov.line1) pill.textContent = ov.line1;
+      if (ov.fg) pill.style.color = ov.fg;
+      if (ov.dx || ov.dy) { pill.style.transform = `translate(${ov.dx ?? 0}px, ${ov.dy ?? 0}px)`; pill.style.zIndex = '20'; }
+    });
+
     // 4. Selection + link-source highlight.
-    root.querySelectorAll('.card.corp-selected, .card.corp-link-src').forEach(el => el.classList.remove('corp-selected', 'corp-link-src'));
+    root.querySelectorAll('.corp-selected, .corp-link-src').forEach(el => el.classList.remove('corp-selected', 'corp-link-src'));
     if (selectedKey) {
-      const el = root.querySelector<HTMLElement>(`.card[data-card="${selectedKey}"], .card[data-emp="${selectedKey}"]`);
+      const el = root.querySelector<HTMLElement>(`.card[data-card="${selectedKey}"], .card[data-emp="${selectedKey}"], .sec-pill[data-pill="${selectedKey}"]`);
       el?.classList.add('corp-selected');
     }
     if (linkSrc) {
@@ -666,14 +688,15 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
   };
 
   const onCorpMouseDown = (e: React.MouseEvent) => {
-    if (!editMode || linkMode) return; // no card-drag while linking
-    const cardEl = (e.target as HTMLElement).closest<HTMLElement>('.card');
-    if (!cardEl) return;
-    const key = cardEl.getAttribute('data-card') || cardEl.getAttribute('data-emp');
+    if (!editMode || linkMode) return; // no drag while linking
+    // Cards and section pills (Executive Director, etc.) are both draggable.
+    const el = (e.target as HTMLElement).closest<HTMLElement>('.card, .sec-pill[data-pill]');
+    if (!el) return;
+    const key = el.getAttribute('data-card') || el.getAttribute('data-emp') || el.getAttribute('data-pill');
     if (!key) return;
     e.preventDefault(); // suppress text selection while dragging
     const base = offsetOf(key);
-    dragRef.current = { key, el: cardEl, startX: e.clientX, startY: e.clientY, baseDx: base.dx, baseDy: base.dy, moved: false };
+    dragRef.current = { key, el, startX: e.clientX, startY: e.clientY, baseDx: base.dx, baseDy: base.dy, moved: false };
     window.addEventListener('mousemove', onCorpDragMove);
     window.addEventListener('mouseup', onCorpDragUp);
   };
@@ -699,7 +722,8 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       return;
     }
     if (editMode) {
-      const key = card?.getAttribute('data-card') || card?.getAttribute('data-emp') || null;
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.card, .sec-pill[data-pill]');
+      const key = el?.getAttribute('data-card') || el?.getAttribute('data-emp') || el?.getAttribute('data-pill') || null;
       setSelectedKey(key);
       setAdding(false);
       return;
@@ -837,7 +861,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       {/* Selected-card editor */}
       {editMode && selectedKey && (
         <CardEditorPanel
-          title={selectedAdded ? 'Added card' : 'Card'}
+          title={selectedAdded ? 'Added card' : (selectedKey.startsWith('pill-') ? 'Section label' : 'Card')}
           override={selectedAdded ?? selectedOverride}
           onPatch={patchSelected}
           onDelete={deleteSelected}
