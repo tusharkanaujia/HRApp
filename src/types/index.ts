@@ -97,8 +97,11 @@ export interface ProjectLayout {
 // Tenant-wide overlay on the fixed A3 Corporate chart: per-card tweaks, extra
 // cards, and a global font. Stored as a single doc at config/corporateChart.
 export interface CorporateCardOverride {
-  bg?: string;        // card background
-  fg?: string;        // card text color
+  bg?: string;        // card background colour
+  border?: string;    // top accent-bar colour
+  fg?: string;        // card text colour
+  img?: string;       // avatar image (URL or data URI) — overrides the headshot/initials
+  noPhoto?: boolean;  // text-only: hide the avatar
   label?: string;     // .clabel line
   line1?: string;     // .cname line (bold)
   line2?: string;     // .ctitle line
@@ -115,7 +118,10 @@ export interface CorporateAddedCard {
   line1?: string;
   line2?: string;
   bg?: string;
+  border?: string;
   fg?: string;
+  img?: string;
+  noPhoto?: boolean;  // text-only card (no avatar)
   dx?: number;        // manual drag offset (px)
   dy?: number;
 }

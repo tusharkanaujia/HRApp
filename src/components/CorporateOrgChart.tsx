@@ -16,11 +16,11 @@ import type { CorporateAddedCard, CorporateChartConfig } from '../types';
 // Sections new cards can be added to. `variant` is the card style; `width` is
 // the fallback card width (the photo-card layout uses a uniform width).
 const SECTIONS: { id: string; label: string; variant: string; width: number }[] = [
-  { id: 'ed-depts',  label: 'ED · Departments',        variant: 'cv-dept', width: 124 },
-  { id: 'ceo-depts', label: 'CEO · Departments',       variant: 'cv-dept', width: 124 },
-  { id: 'ops-pd',    label: 'Ops · Project Directors', variant: 'cv-pd',   width: 124 },
-  { id: 'ops-pm',    label: 'Ops · Project Managers',  variant: 'cv-pm',   width: 124 },
-  { id: 'ops-dh',    label: 'Ops · Dept. Heads',       variant: 'cv-dh',   width: 124 },
+  { id: 'ed-depts',  label: 'ED · Departments',        variant: 'cv-dept', width: 200 },
+  { id: 'ceo-depts', label: 'CEO · Departments',       variant: 'cv-dept', width: 200 },
+  { id: 'ops-pd',    label: 'Ops · Project Directors', variant: 'cv-pd',   width: 200 },
+  { id: 'ops-pm',    label: 'Ops · Project Managers',  variant: 'cv-pm',   width: 200 },
+  { id: 'ops-dh',    label: 'Ops · Dept. Heads',       variant: 'cv-dh',   width: 200 },
 ];
 
 // Base connector set (parent card key → child card key), matching the org.
@@ -177,7 +177,7 @@ const CSS = `
 .corp-org .card.corp-link-src { outline: 2px solid #22c55e !important; outline-offset: 3px; border-radius: 12px; }
 
 /* ── CARD (white box, colored top bar, circular avatar overlapping the top) ── */
-.corp-org .card { position: relative; display: flex; flex-direction: column; align-items: center; width: 138px; flex-shrink: 0;
+.corp-org .card { position: relative; display: flex; flex-direction: column; align-items: center; width: 200px; flex-shrink: 0;
   background: #fff; border-radius: 13px; border-top: 4px solid var(--accent);
   box-shadow: 0 6px 16px rgba(15,23,42,.10);
   padding: 6px 10px 12px; margin-top: 40px;
@@ -213,14 +213,14 @@ const CSS = `
 
 /* ── PER-BRANCH ACCENTS ── */
 /* Top management — bigger avatars + stronger accent. */
-.corp-org .cv-board { width: 210px; margin-top: 60px; --a1: #818cf8; --a2: #4f46e5; --accent: #4338ca; --pill: #eef0ff; }
+.corp-org .cv-board { margin-top: 60px; --a1: #818cf8; --a2: #4f46e5; --accent: #4338ca; --pill: #eef0ff; }
 .corp-org .cv-board .cphoto { width: 92px; height: 92px; margin-top: -58px; }
 .corp-org .cv-board .cinit { font-size: calc(30px * var(--cfs,1)); }
 .corp-org .cv-board .cname { font-size: calc(17px * var(--cfs,1)); }
 
-.corp-org .cv-ed  { width: 176px; margin-top: 50px; --a1: #a78bfa; --a2: #7c3aed; --accent: #6d28d9; --pill: #f1ecff; }
-.corp-org .cv-ceo { width: 176px; margin-top: 50px; --a1: #60a5fa; --a2: #2563eb; --accent: #1d4ed8; --pill: #e7efff; }
-.corp-org .cv-ops { width: 176px; margin-top: 50px; --a1: #34d399; --a2: #059669; --accent: #047857; --pill: #e3f7ef; }
+.corp-org .cv-ed  { margin-top: 50px; --a1: #a78bfa; --a2: #7c3aed; --accent: #6d28d9; --pill: #f1ecff; }
+.corp-org .cv-ceo { margin-top: 50px; --a1: #60a5fa; --a2: #2563eb; --accent: #1d4ed8; --pill: #e7efff; }
+.corp-org .cv-ops { margin-top: 50px; --a1: #34d399; --a2: #059669; --accent: #047857; --pill: #e3f7ef; }
 .corp-org .cv-ed .cphoto, .corp-org .cv-ceo .cphoto, .corp-org .cv-ops .cphoto { width: 76px; height: 76px; margin-top: -50px; }
 .corp-org .cv-ed .cinit, .corp-org .cv-ceo .cinit, .corp-org .cv-ops .cinit { font-size: calc(22px * var(--cfs,1)); }
 .corp-org .cv-ed .cname, .corp-org .cv-ceo .cname, .corp-org .cv-ops .cname { font-size: calc(14px * var(--cfs,1)); }
@@ -233,7 +233,7 @@ const CSS = `
 .corp-org [data-section="ops-dh"] .card    { --a1: #38bdf8; --a2: #0284c7; --accent: #0369a1; --pill: #e2f2fd; }
 .corp-org .cv-mbm { --a1: #60a5fa; --a2: #1d4ed8; --accent: #1e40af; --pill: #e7efff; }
 .corp-org .cv-hr  { --a1: #f472b6; --a2: #db2777; --accent: #be185d; --pill: #fde7f1; }
-.corp-org .cv-side { width: 120px; margin-top: 30px; --a1: #cbd5e1; --a2: #94a3b8; --accent: #94a3b8; --pill: #eef2f7; }
+.corp-org .cv-side { margin-top: 30px; --a1: #cbd5e1; --a2: #94a3b8; --accent: #94a3b8; --pill: #eef2f7; }
 .corp-org .cv-side .cphoto { width: 42px; height: 42px; margin-top: -30px; }
 .corp-org .cv-side .cinit { font-size: calc(12px * var(--cfs,1)); }
 .corp-org .cv-side .cname { font-size: calc(10px * var(--cfs,1)); }
@@ -535,8 +535,10 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       card.style.display = '';
       card.style.transform = '';
       card.style.zIndex = '';
+      card.style.backgroundColor = '';
+      card.style.borderTopColor = '';
       card.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle,.csub,.cpill,.cext').forEach(t => { t.style.color = ''; });
-      if (photo) { photo.style.backgroundColor = ''; photo.style.backgroundImage = ''; photo.classList.remove('has-img'); }
+      if (photo) { photo.style.backgroundColor = ''; photo.style.backgroundImage = ''; photo.style.display = ''; photo.classList.remove('has-img'); }
       // avatar: initials from the person's name (or the card title for non-people)
       const init = card.querySelector<HTMLElement>('.cinit');
       if (init) init.textContent = initialsOf(emp ? niceName(emp.name) : (card.querySelector('.cname')?.textContent || ''));
@@ -546,9 +548,13 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       const ov = cards[key];
       if (!ov) return;
       if (ov.hidden) { card.style.display = 'none'; return; }
-      // photo-color override → solid avatar tint (drop the gradient, keep initials)
-      if (ov.bg && photo) { photo.style.backgroundColor = ov.bg; photo.style.backgroundImage = 'none'; }
+      if (ov.bg) card.style.backgroundColor = ov.bg;            // card background
+      if (ov.border) card.style.borderTopColor = ov.border;    // top accent bar
       if (ov.fg) card.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle,.csub,.cpill,.cext').forEach(t => { t.style.color = ov.fg!; });
+      if (photo) {
+        if (ov.noPhoto) photo.style.display = 'none';                                            // text-only
+        else if (ov.img) { photo.style.backgroundImage = `url("${ov.img}")`; photo.classList.add('has-img'); } // custom image
+      }
       if (ov.dx || ov.dy) { card.style.transform = `translate(${ov.dx ?? 0}px, ${ov.dy ?? 0}px)`; card.style.zIndex = '20'; }
       const set = (sel: string, v?: string) => { if (v != null) { const el = card.querySelector(sel); if (el) el.textContent = v; } };
       set('.clabel', ov.label);
@@ -570,8 +576,13 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
         const photo = el.querySelector<HTMLElement>('.cphoto');
         const init = el.querySelector<HTMLElement>('.cinit');
         if (init) init.textContent = initialsOf(c.line1 || el.querySelector('.cname')?.textContent || '');
-        if (c.bg && photo) { photo.style.backgroundColor = c.bg; photo.style.backgroundImage = 'none'; }
+        if (c.bg) el.style.backgroundColor = c.bg;
+        if (c.border) el.style.borderTopColor = c.border;
         if (c.fg) el.querySelectorAll<HTMLElement>('.clabel,.cname,.ctitle').forEach(t => { t.style.color = c.fg!; });
+        if (photo) {
+          if (c.noPhoto) photo.style.display = 'none';
+          else if (c.img) { photo.style.backgroundImage = `url("${c.img}")`; photo.classList.add('has-img'); }
+        }
         if (c.dx || c.dy) { el.style.transform = `translate(${c.dx ?? 0}px, ${c.dy ?? 0}px)`; el.style.zIndex = '20'; }
       }
     }
@@ -887,14 +898,30 @@ function escapeHtml(s: string) {
 // Panel to edit the selected card's photo color and text lines.
 function CardEditorPanel({ title, override, onPatch, onDelete, onClose }: {
   title: string;
-  override?: { bg?: string; fg?: string; label?: string; line1?: string; line2?: string; dx?: number; dy?: number };
+  override?: { bg?: string; border?: string; fg?: string; img?: string; noPhoto?: boolean; label?: string; line1?: string; line2?: string; dx?: number; dy?: number };
   onPatch: (patch: Record<string, unknown>) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
   const ov = override ?? {};
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => onPatch({ img: reader.result as string, noPhoto: false });
+    reader.readAsDataURL(f);
+  };
+  const swatch = (label: string, field: 'bg' | 'border' | 'fg', fallback: string) => (
+    <div>
+      <label className="block text-slate-500 mb-1">{label}</label>
+      <div className="flex items-center gap-1">
+        <input type="color" value={(ov[field] as string) ?? fallback} onChange={e => onPatch({ [field]: e.target.value })} className="w-8 h-7 rounded border border-slate-200 cursor-pointer" />
+        <button onClick={() => onPatch({ [field]: null })} className="text-slate-400 hover:text-red-500" title="Clear"><X size={12} /></button>
+      </div>
+    </div>
+  );
   return (
-    <div className="absolute top-14 right-3 z-40 bg-white rounded-xl shadow-lg border border-slate-200 p-3 w-64 text-xs text-slate-700" onClick={e => e.stopPropagation()}>
+    <div className="absolute top-14 right-3 z-40 bg-white rounded-xl shadow-lg border border-slate-200 p-3 w-64 text-xs text-slate-700 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-slate-600">{title}</span>
         <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
@@ -905,23 +932,27 @@ function CardEditorPanel({ title, override, onPatch, onDelete, onClose }: {
       <label className="block text-slate-500 mb-1">Name line</label>
       <input value={ov.line1 ?? ''} placeholder="(unchanged)" onChange={e => onPatch({ line1: e.target.value })} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
       <label className="block text-slate-500 mb-1">Title line</label>
-      <input value={ov.line2 ?? ''} placeholder="(unchanged)" onChange={e => onPatch({ line2: e.target.value })} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
+      <input value={ov.line2 ?? ''} placeholder="(unchanged)" onChange={e => onPatch({ line2: e.target.value })} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-3" />
 
+      {/* Image */}
+      <label className="block text-slate-500 mb-1">Image</label>
+      <input value={ov.img ?? ''} placeholder="Paste image URL…" onChange={e => onPatch({ img: e.target.value || null, ...(e.target.value ? { noPhoto: false } : {}) })} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-1.5" />
+      <div className="flex items-center gap-2 mb-2">
+        <label className="flex-1 text-center bg-slate-100 hover:bg-slate-200 rounded-md py-1 cursor-pointer text-slate-600">
+          Upload…<input type="file" accept="image/*" onChange={onFile} className="hidden" />
+        </label>
+        {ov.img ? <button onClick={() => onPatch({ img: null })} className="text-slate-400 hover:text-red-500 px-1" title="Clear image"><X size={12} /></button> : null}
+      </div>
+      <label className="flex items-center gap-2 mb-3 cursor-pointer text-slate-600">
+        <input type="checkbox" checked={!!ov.noPhoto} onChange={e => onPatch({ noPhoto: e.target.checked })} className="rounded" />
+        Text only (hide image)
+      </label>
+
+      {/* Colors */}
       <div className="flex items-center gap-3 mb-3">
-        <div>
-          <label className="block text-slate-500 mb-1">Photo color</label>
-          <div className="flex items-center gap-1">
-            <input type="color" value={ov.bg ?? '#e2e8f0'} onChange={e => onPatch({ bg: e.target.value })} className="w-8 h-7 rounded border border-slate-200 cursor-pointer" />
-            <button onClick={() => onPatch({ bg: null })} className="text-slate-400 hover:text-red-500" title="Clear"><X size={12} /></button>
-          </div>
-        </div>
-        <div>
-          <label className="block text-slate-500 mb-1">Text</label>
-          <div className="flex items-center gap-1">
-            <input type="color" value={ov.fg ?? '#1e293b'} onChange={e => onPatch({ fg: e.target.value })} className="w-8 h-7 rounded border border-slate-200 cursor-pointer" />
-            <button onClick={() => onPatch({ fg: null })} className="text-slate-400 hover:text-red-500" title="Clear"><X size={12} /></button>
-          </div>
-        </div>
+        {swatch('Background', 'bg', '#ffffff')}
+        {swatch('Border', 'border', '#7c3aed')}
+        {swatch('Text', 'fg', '#1e293b')}
       </div>
 
       {(ov.dx || ov.dy) ? (
@@ -943,6 +974,8 @@ function AddCardPanel({ onAdd, onClose }: { onAdd: (c: CorporateAddedCard) => vo
   const [label, setLabel] = useState('');
   const [line1, setLine1] = useState('');
   const [line2, setLine2] = useState('');
+  const [img, setImg] = useState('');
+  const [textOnly, setTextOnly] = useState(false);
   const sec = SECTIONS.find(s => s.id === section)!;
   return (
     <div className="absolute top-14 right-3 z-40 bg-white rounded-xl shadow-lg border border-slate-200 p-3 w-64 text-xs text-slate-700" onClick={e => e.stopPropagation()}>
@@ -959,9 +992,15 @@ function AddCardPanel({ onAdd, onClose }: { onAdd: (c: CorporateAddedCard) => vo
       <label className="block text-slate-500 mb-1">Name line</label>
       <input value={line1} onChange={e => setLine1(e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
       <label className="block text-slate-500 mb-1">Title line</label>
-      <input value={line2} onChange={e => setLine2(e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-3" />
+      <input value={line2} onChange={e => setLine2(e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2" />
+      <label className="block text-slate-500 mb-1">Image URL (optional)</label>
+      <input value={img} disabled={textOnly} placeholder="https://…" onChange={e => setImg(e.target.value)} className="w-full border border-slate-200 rounded-md px-2 py-1 mb-2 disabled:bg-slate-50 disabled:text-slate-400" />
+      <label className="flex items-center gap-2 mb-3 cursor-pointer text-slate-600">
+        <input type="checkbox" checked={textOnly} onChange={e => setTextOnly(e.target.checked)} className="rounded" />
+        Text only (no image)
+      </label>
       <button
-        onClick={() => onAdd({ key: `add-${Date.now().toString(36)}`, section, variant: sec.variant, width: sec.width || undefined, label: label || undefined, line1: line1 || undefined, line2: line2 || undefined })}
+        onClick={() => onAdd({ key: `add-${Date.now().toString(36)}`, section, variant: sec.variant, width: sec.width || undefined, label: label || undefined, line1: line1 || undefined, line2: line2 || undefined, img: (!textOnly && img) ? img : undefined, noPhoto: textOnly || undefined })}
         disabled={!label && !line1 && !line2}
         className="w-full bg-blue-600 text-white rounded-md py-1.5 font-medium hover:bg-blue-700 disabled:opacity-50"
       >
