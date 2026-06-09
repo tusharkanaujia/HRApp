@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
 import {
   Users, FolderOpen, GitBranch, LayoutDashboard, LogOut, UserCog,
   Shield, Eye, Pencil, ClipboardList, ChevronLeft, ChevronRight, Settings, Bell, BellOff, Palette,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useTenant } from '../contexts/TenantContext';
-import { logout } from '../store/authSlice';
+import { useAuthContext } from '../contexts/AuthContext';
 import type { UserRole } from '../types';
 import { useActivityBadge } from '../hooks/useActivityBadge';
 import { getToastEnabled, setToastEnabled } from '../utils/activityNotifications';
@@ -29,7 +28,7 @@ const ROLE_BADGE: Record<UserRole, { label: string; cls: string; Icon: React.Ele
 const COLLAPSE_KEY = 'wehive:sidebar-collapsed';
 
 export default function Sidebar() {
-  const dispatch = useDispatch();
+  const { signOutUser } = useAuthContext();
   const navigate = useNavigate();
   const { currentUser, isAdmin, canEdit } = useAuth();
   const { tenant } = useTenant();
@@ -230,7 +229,7 @@ export default function Sidebar() {
                 </button>
               )}
               <button
-                onClick={() => { setMenuOpen(false); dispatch(logout()); }}
+                onClick={() => { setMenuOpen(false); signOutUser(); }}
                 className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-200 hover:bg-slate-700 text-left border-t border-slate-700"
               >
                 <LogOut size={14} /> Sign out

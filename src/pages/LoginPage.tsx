@@ -1,18 +1,17 @@
 import { useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
 import { Navigate } from 'react-router-dom';
-import { login } from '../store/authSlice';
+import { FirebaseError } from 'firebase/app';
 import { useAuth } from '../hooks/useAuth';
+import { useAuthContext } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
-import type { RootState } from '../store';
 
 export default function LoginPage() {
-  const dispatch = useDispatch();
   const { isLoggedIn } = useAuth();
-  const users = useSelector((s: RootState) => s.auth.users);
+  const { signIn } = useAuthContext();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const { tenant } = useTenant();
   const initials = tenant?.name?.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? 'WH';
@@ -22,13 +21,24 @@ export default function LoginPage() {
 
   if (isLoggedIn) return <Navigate to="/" replace />;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const match = users.find(u => u.username === username.trim() && u.password === password);
-    if (!match) { setError('Invalid username or password.'); return; }
-    if (match.disabled) { setError('This account has been disabled. Contact your administrator.'); return; }
+    if (submitting) return;
     setError('');
-    dispatch(login({ username: username.trim(), password }));
+    setSubmitting(true);
+    try {
+      await signIn(username, password);
+    } catch (err) {
+      const code = err instanceof FirebaseError ? err.code : '';
+      if (code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please wait a moment and try again.');
+      } else {
+        // invalid-credential / wrong-password / user-not-found / invalid-email
+        setError('Invalid username or password.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -83,9 +93,10 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-blue-700 transition-colors"
+            disabled={submitting}
+            className="w-full bg-blue-600 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60"
           >
-            Sign in
+            {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
       </div>

@@ -1,8 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Navigate } from 'react-router-dom';
+import { FirebaseError } from 'firebase/app';
+import { createUserWithEmailAndPassword, signOut, updatePassword } from 'firebase/auth';
 import { useAuth } from '../hooks/useAuth';
-import { setUserRole, addUser, removeUser, changePassword, setUserDisabled } from '../store/authSlice';
+import { useTenant } from '../contexts/TenantContext';
+import { setUserRole, addUser, removeUser, setUserDisabled } from '../store/authSlice';
+import { auth, getSecondaryAuth } from '../lib/firebase';
+import { toAuthEmail } from '../lib/authEmail';
 import type { RootState } from '../store';
 import type { UserRole } from '../types';
 import { Plus, Trash2, KeyRound, Shield, Eye, EyeOff, Pencil, X, Sparkles, Lock, Unlock } from 'lucide-react';
@@ -46,6 +51,7 @@ const ROLE_ICONS: Record<UserRole, React.ElementType> = {
 
 export default function UsersPage() {
   const { isAdmin, currentUser } = useAuth();
+  const { tenantId } = useTenant();
   const dispatch = useDispatch();
   const users = useSelector((s: RootState) => s.auth.users);
   const employees = useSelector((s: RootState) => s.employees.list);
@@ -85,9 +91,9 @@ export default function UsersPage() {
   };
 
   const [changePwFor, setChangePwFor] = useState<string | null>(null);
-  const [changePwReason, setChangePwReason] = useState<string>('');
   const [newPwValue, setNewPwValue] = useState('');
   const [showPwValue, setShowPwValue] = useState(false);
+  const [pwError, setPwError] = useState('');
 
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
@@ -95,22 +101,36 @@ export default function UsersPage() {
 
   const adminCount = users.filter(u => u.role === 'ADMIN').length;
 
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pickedEmployee)      { setAddError('Pick an employee.');                return; }
     if (!newUser.trim())      { setAddError('Username is required.');            return; }
     if (!newPass.trim())      { setAddError('Password is required.');            return; }
     if (users.find(u => u.username === newUser.trim())) { setAddError('Username already taken.'); return; }
-    dispatch(addUser({
-      id: `u${Date.now()}`,
-      username: newUser.trim(),
-      password: newPass,
-      name: pickedEmployee.name,
-      empId: pickedEmployee.empId,
-      role: newRole,
-    }));
-    setShowAdd(false);
-    resetAddForm();
+    setAddError('');
+    try {
+      // Create the Firebase Auth account on a secondary app so this admin's own
+      // session is not replaced by the newly-created user.
+      const secondary = getSecondaryAuth();
+      const cred = await createUserWithEmailAndPassword(secondary, toAuthEmail(newUser.trim(), tenantId), newPass);
+      const authUid = cred.user.uid;
+      await signOut(secondary);
+      dispatch(addUser({
+        id: `u${Date.now()}`,
+        username: newUser.trim(),
+        authUid,
+        name: pickedEmployee.name,
+        empId: pickedEmployee.empId,
+        role: newRole,
+      }));
+      setShowAdd(false);
+      resetAddForm();
+    } catch (err) {
+      const code = err instanceof FirebaseError ? err.code : '';
+      if (code === 'auth/email-already-in-use') setAddError('That username is already registered.');
+      else if (code === 'auth/weak-password')   setAddError('Password too weak (minimum 6 characters).');
+      else setAddError('Could not create the account. Please try again.');
+    }
   };
 
   const handleRemove = (id: string) => {
@@ -125,15 +145,7 @@ export default function UsersPage() {
     const target = users.find(u => u.id === userId);
     if (!target) return;
     if (target.role === 'ADMIN' && role !== 'ADMIN' && adminCount <= 1) return;
-    const promotingToAdmin = target.role !== 'ADMIN' && role === 'ADMIN';
     dispatch(setUserRole({ userId, role }));
-    // Security: when granting ADMIN, require the granting admin to set a new password.
-    if (promotingToAdmin) {
-      setChangePwFor(userId);
-      setChangePwReason(`Set a new password for the new admin (${target.name}).`);
-      setNewPwValue('');
-      setShowPwValue(false);
-    }
   };
 
   const toggleDisabled = (userId: string) => {
@@ -144,14 +156,28 @@ export default function UsersPage() {
     dispatch(setUserDisabled({ userId, disabled: !target.disabled }));
   };
 
-  const handlePasswordChange = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPwValue.trim() || !changePwFor) return;
-    dispatch(changePassword({ userId: changePwFor, password: newPwValue.trim() }));
+  const closePwModal = () => {
     setChangePwFor(null);
-    setChangePwReason('');
     setNewPwValue('');
     setShowPwValue(false);
+    setPwError('');
+  };
+
+  // Only the signed-in user can change their own password (Firebase Auth has no
+  // client-side way to set another user's password without the Admin SDK).
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPwValue.trim() || !auth.currentUser) return;
+    setPwError('');
+    try {
+      await updatePassword(auth.currentUser, newPwValue.trim());
+      closePwModal();
+    } catch (err) {
+      const code = err instanceof FirebaseError ? err.code : '';
+      if (code === 'auth/requires-recent-login') setPwError('For security, sign out and back in, then change your password.');
+      else if (code === 'auth/weak-password')    setPwError('Password too weak (minimum 6 characters).');
+      else setPwError('Could not update password. Please try again.');
+    }
   };
 
   return (
@@ -237,13 +263,15 @@ export default function UsersPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => { setChangePwFor(u.id); setChangePwReason(''); setNewPwValue(''); setShowPwValue(false); }}
-                        className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"
-                        title="Change password"
-                      >
-                        <KeyRound size={14} />
-                      </button>
+                      {isSelf && (
+                        <button
+                          onClick={() => { setChangePwFor(u.id); setNewPwValue(''); setShowPwValue(false); setPwError(''); }}
+                          className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"
+                          title="Change your password"
+                        >
+                          <KeyRound size={14} />
+                        </button>
+                      )}
                       {!isSelf && !(isLastAdmin && !u.disabled) && (
                         <button
                           onClick={() => toggleDisabled(u.id)}
@@ -399,13 +427,8 @@ export default function UsersPage() {
       {changePwFor && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 shadow-2xl w-full max-w-sm mx-4">
-            <h3 className="font-semibold text-slate-800 mb-1">Change Password</h3>
-            <p className="text-xs text-slate-400 mb-1">For: {users.find(u => u.id === changePwFor)?.name}</p>
-            {changePwReason && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 mb-3">
-                {changePwReason}
-              </p>
-            )}
+            <h3 className="font-semibold text-slate-800 mb-1">Change Your Password</h3>
+            <p className="text-xs text-slate-400 mb-3">For: {users.find(u => u.id === changePwFor)?.name}</p>
             <form onSubmit={handlePasswordChange} className="space-y-3">
               <div className="flex items-center justify-end -mb-1">
                 <button
@@ -434,10 +457,11 @@ export default function UsersPage() {
                   {showPwValue ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
+              {pwError && <p className="text-xs text-red-500">{pwError}</p>}
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => { setChangePwFor(null); setChangePwReason(''); setNewPwValue(''); setShowPwValue(false); }}
+                  onClick={closePwModal}
                   className="flex-1 border border-slate-300 rounded-lg py-2 text-sm hover:bg-slate-50"
                 >
                   Cancel

@@ -1,0 +1,25 @@
+rules_version = '2';
+
+// Per-tenant isolation enforced by the signed-in user's email domain.
+// Each user's Firebase Auth email is `<username>@<tenantId>.wehive.app`, so a
+// user may only touch their own tenant's data. The tenant doc itself is
+// publicly readable (branding only: name/colour/logo) so the login screen can
+// render before sign-in.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function member(t) {
+      return request.auth != null
+        && request.auth.token.email.matches('^[^@]+@' + t + '[.]wehive[.]app$');
+    }
+
+    match /tenants/{t} {
+      allow read: if true;          // branding only
+      allow write: if member(t);
+
+      match /{document=**} {
+        allow read, write: if member(t);
+      }
+    }
+  }
+}

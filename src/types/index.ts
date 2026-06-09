@@ -3,7 +3,7 @@ export type UserRole = 'ADMIN' | 'EDITOR' | 'VIEWER';
 export interface AppUser {
   id: string;
   username: string;
-  password: string;
+  authUid?: string;   // Firebase Auth uid (set at migration / account creation)
   name: string;
   empId?: string;
   role: UserRole;

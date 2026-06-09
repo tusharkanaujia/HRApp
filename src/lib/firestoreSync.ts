@@ -131,14 +131,6 @@ export const firestoreMiddleware: Middleware =
         ).catch(console.error);
         break;
 
-      case 'auth/changePassword':
-        setDoc(
-          ref('users', (payload as { userId: string }).userId),
-          { password: (payload as { password: string }).password },
-          { merge: true },
-        ).catch(console.error);
-        break;
-
       case 'auth/setUserDisabled':
         setDoc(
           ref('users', (payload as { userId: string }).userId),

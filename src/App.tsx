@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -13,21 +13,35 @@ import UsersPage from './pages/UsersPage';
 import AppearancePage from './pages/AppearancePage';
 import ActivityPage from './pages/ActivityPage';
 import { TenantProvider, useTenant } from './contexts/TenantContext';
+import { AuthProvider, useAuthContext } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { useAuth } from './hooks/useAuth';
 import { setTenantId } from './lib/firestoreSync';
 import { subscribeToTenantData } from './lib/firestoreLoader';
 import type { AppDispatch } from './store';
 
-function DataLoader({ children }: { children: React.ReactNode }) {
+// Subscribes to tenant data once the user is authenticated, then renders the
+// protected app. Also enforces account validity: a signed-in user whose
+// directory entry is missing or disabled is signed straight back out.
+function DataLoaderGate() {
   const dispatch = useDispatch() as AppDispatch;
-  const { tenantId, loading: tenantLoading } = useTenant();
+  const { tenantId } = useTenant();
+  const { firebaseUser, signOutUser } = useAuthContext();
+  const { currentUser } = useAuth();
   const [dataReady, setDataReady] = useState(false);
 
   useEffect(() => {
-    if (!tenantId || tenantLoading) return;
+    if (!tenantId) return;
     setTenantId(tenantId);
     return subscribeToTenantData(tenantId, dispatch, () => setDataReady(true));
-  }, [tenantId, tenantLoading, dispatch]);
+  }, [tenantId, dispatch]);
+
+  // Once the directory has loaded, reject removed/disabled accounts.
+  useEffect(() => {
+    if (dataReady && firebaseUser && (!currentUser || currentUser.disabled)) {
+      signOutUser();
+    }
+  }, [dataReady, firebaseUser, currentUser, signOutUser]);
 
   if (!dataReady) {
     return (
@@ -40,11 +54,12 @@ function DataLoader({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <Outlet />;
 }
 
 function AppShell() {
   const { loading, migrating, error } = useTenant();
+  const { authLoading } = useAuthContext();
 
   if (migrating) {
     return (
@@ -58,7 +73,7 @@ function AppShell() {
     );
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -78,34 +93,38 @@ function AppShell() {
   }
 
   return (
-    <DataLoader>
-      <BrowserRouter>
-        <ToastProvider>
+    <BrowserRouter>
+      <ToastProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* Authenticated branch — data is only fetched after sign-in. */}
           <Route element={<ProtectedRoute />}>
-            <Route element={<Layout />}>
-              <Route path="/"           element={<HomePage />} />
-              <Route path="/employees"     element={<EmployeesPage />} />
-              <Route path="/employees/:id" element={<EmployeeDetailPage />} />
-              <Route path="/projects"   element={<ProjectsPage />} />
-              <Route path="/org-chart"  element={<OrgChartPage />} />
-              <Route path="/users"      element={<UsersPage />} />
-              <Route path="/appearance" element={<AppearancePage />} />
-              <Route path="/activity"   element={<ActivityPage />} />
+            <Route element={<DataLoaderGate />}>
+              <Route element={<Layout />}>
+                <Route path="/"              element={<HomePage />} />
+                <Route path="/employees"     element={<EmployeesPage />} />
+                <Route path="/employees/:id" element={<EmployeeDetailPage />} />
+                <Route path="/projects"      element={<ProjectsPage />} />
+                <Route path="/org-chart"     element={<OrgChartPage />} />
+                <Route path="/users"         element={<UsersPage />} />
+                <Route path="/appearance"    element={<AppearancePage />} />
+                <Route path="/activity"      element={<ActivityPage />} />
+              </Route>
             </Route>
           </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        </ToastProvider>
-      </BrowserRouter>
-    </DataLoader>
+      </ToastProvider>
+    </BrowserRouter>
   );
 }
 
 export default function App() {
   return (
     <TenantProvider>
-      <AppShell />
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
     </TenantProvider>
   );
 }
