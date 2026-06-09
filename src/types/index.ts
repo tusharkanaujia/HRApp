@@ -129,6 +129,7 @@ export interface CorporateEdge { from: string; to: string; type?: 'normal' | 'si
 export interface CorporateChartConfig {
   font?: { family?: string; scale?: number; color?: string };
   width?: number;     // page width in px for horizontal expansion (unset = fit, 1640)
+  connector?: { color?: string; width?: number; style?: 'curved' | 'elbow' | 'straight' };
   cards?: Record<string, CorporateCardOverride>;
   added?: CorporateAddedCard[];
   edges?: { added?: CorporateEdge[]; removed?: string[] }; // overlay on the base connector set

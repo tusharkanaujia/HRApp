@@ -98,6 +98,7 @@ export const firestoreMiddleware: Middleware =
       // Full replace (no merge) so removed cards / cleared overrides persist.
       case 'corporateChart/setCorporateFont':
       case 'corporateChart/setCorporateWidth':
+      case 'corporateChart/setCorporateConnector':
       case 'corporateChart/setCardOverride':
       case 'corporateChart/addCorporateCard':
       case 'corporateChart/updateAddedCard':

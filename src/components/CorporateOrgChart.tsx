@@ -1,14 +1,14 @@
 import { forwardRef, useImperativeHandle, useRef, useLayoutEffect, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { Pencil, Plus, Trash2, Type, X, RotateCcw, Undo2, Redo2, Spline, MoveHorizontal } from 'lucide-react';
+import { Pencil, Plus, Trash2, Type, X, RotateCcw, Undo2, Redo2, Spline, MoveHorizontal, Waypoints } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import type { RootState } from '../store';
 import { useAuth } from '../hooks/useAuth';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import {
-  setCorporateFont, setCorporateWidth, setCardOverride, addCorporateCard, updateAddedCard, deleteCorporateCard,
+  setCorporateFont, setCorporateWidth, setCorporateConnector, setCardOverride, addCorporateCard, updateAddedCard, deleteCorporateCard,
   addCorporateEdge, removeCorporateEdge, resetCorporateChart, replaceCorporateChart,
 } from '../store/corporateChartSlice';
 import type { CorporateAddedCard, CorporateChartConfig } from '../types';
@@ -30,6 +30,24 @@ const DEFAULT_PAGE_W = 1640;
 const MIN_PAGE_W = 1100;   // narrower = more likely to fit the screen
 const MAX_PAGE_W = 4200;   // wider = full-size spread, scroll horizontally
 const PAGE_W_STEP = 80;
+
+// Connector line defaults (overridable via the Lines control).
+const DEFAULT_CONN_COLOR = '#c2cad6';
+const DEFAULT_CONN_WIDTH = 1.6;
+const DEFAULT_CONN_STYLE: 'curved' | 'elbow' | 'straight' = 'curved';
+
+// Build the SVG path for a parent→child connector in the chosen style.
+// (sx,sy) = parent bottom-centre, (tx,ty) = child top-centre.
+function connectorPath(style: 'curved' | 'elbow' | 'straight', sx: number, sy: number, tx: number, ty: number): string {
+  const midY = sy + (ty - sy) / 2;
+  if (style === 'straight') return `M ${sx} ${sy} L ${tx} ${ty}`;
+  if (style === 'curved')   return `M ${sx} ${sy} C ${sx} ${midY}, ${tx} ${midY}, ${tx} ${ty}`;
+  // rounded elbow
+  if (Math.abs(tx - sx) < 1) return `M ${sx} ${sy} L ${tx} ${ty}`;
+  const dir = tx >= sx ? 1 : -1;
+  const r = Math.max(0, Math.min(12, Math.abs(tx - sx) / 2, Math.abs(ty - sy) / 2));
+  return `M ${sx} ${sy} V ${midY - r} Q ${sx} ${midY} ${sx + dir * r} ${midY} H ${tx - dir * r} Q ${tx} ${midY} ${tx} ${midY + r} V ${ty}`;
+}
 
 // Base connector set (parent card key → child card key), matching the org.
 // Keys are the cards' data-card / data-emp ids. 'side' edges are the dashed
@@ -435,6 +453,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [fontOpen, setFontOpen] = useState(false);
   const [widthOpen, setWidthOpen] = useState(false);
+  const [linesOpen, setLinesOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [linkMode, setLinkMode] = useState(false);
   const [linkSrc, setLinkSrc] = useState<string | null>(null);
@@ -442,6 +461,9 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
 
   const font = config.font ?? {};
   const width = config.width ?? null;          // null = fit (default DEFAULT_PAGE_W)
+  const connColor = config.connector?.color ?? DEFAULT_CONN_COLOR;
+  const connWidth = config.connector?.width ?? DEFAULT_CONN_WIDTH;
+  const connStyle = config.connector?.style ?? DEFAULT_CONN_STYLE;
   const cards = useMemo(() => config.cards ?? {}, [config.cards]);
   const added = useMemo(() => config.added ?? [], [config.added]);
 
@@ -649,26 +671,25 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
         if (!a || !b) continue;
         const id = `${e.from}->${e.to}`;
         if (e.type === 'side') {
-          // Connect the facing edges, whichever side the child is on.
+          // Dashed PA/secretary link: connect the facing edges, lighter weight.
           const aCx = a.x + a.w / 2, bCx = b.x + b.w / 2;
           const sx = bCx >= aCx ? a.x + a.w : a.x;
           const tx = bCx >= aCx ? b.x : b.x + b.w;
           const sy = a.y + a.h / 2, ty = b.y + b.h / 2;
-          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${tx} ${ty}" stroke="#cbd5e1" stroke-width="1.4" stroke-dasharray="4 3" fill="none" />`);
+          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${tx} ${ty}" stroke="${connColor}" stroke-width="${connWidth}" stroke-dasharray="4 3" fill="none" stroke-linecap="round" />`);
         } else {
-          // Elbow from the parent card's bottom to the child card's top edge
-          // (where the colour bar + overlapping avatar sit). No arrowhead.
+          // Parent bottom-centre → child top edge (where the colour bar + avatar
+          // sit), in the chosen style. No arrowhead.
           const sx = a.x + a.w / 2, sy = a.y + a.h;
           const tx = b.x + b.w / 2, ty = b.y;
-          const midY = sy + (ty - sy) / 2;
-          paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}" stroke="#c2cad6" stroke-width="1.4" fill="none" />`);
+          paths.push(`<path data-edge="${id}" d="${connectorPath(connStyle, sx, sy, tx, ty)}" stroke="${connColor}" stroke-width="${connWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" />`);
         }
       }
       const w = page.scrollWidth, h = page.scrollHeight;
       page.insertAdjacentHTML('afterbegin',
         `<svg class="corp-edges" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths.join('')}</svg>`);
     }
-  }, [employees, cards, added, selectedKey, edges, font, width, linkSrc, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [employees, cards, added, selectedKey, edges, font, width, connColor, connWidth, connStyle, linkSrc, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Drag-to-move (edit mode) ──────────────────────────────────────────────
   const dragRef = useRef<{ key: string; el: HTMLElement; startX: number; startY: number; baseDx: number; baseDy: number; moved: boolean } | null>(null);
@@ -827,7 +848,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       {canEdit && (
         <div className="absolute top-3 right-3 z-40 flex items-center gap-2" onClick={e => e.stopPropagation()}>
           <button
-            onClick={() => { setEditMode(m => !m); setSelectedKey(null); setAdding(false); setFontOpen(false); setWidthOpen(false); setLinkMode(false); setLinkSrc(null); }}
+            onClick={() => { setEditMode(m => !m); setSelectedKey(null); setAdding(false); setFontOpen(false); setWidthOpen(false); setLinesOpen(false); setLinkMode(false); setLinkSrc(null); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow ${
               editMode ? 'bg-blue-600 text-white' : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
             }`}
@@ -843,7 +864,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
                 <Redo2 size={14} />
               </button>
               <button
-                onClick={() => { setLinkMode(m => !m); setLinkSrc(null); setSelectedKey(null); setAdding(false); setFontOpen(false); setWidthOpen(false); }}
+                onClick={() => { setLinkMode(m => !m); setLinkSrc(null); setSelectedKey(null); setAdding(false); setFontOpen(false); setWidthOpen(false); setLinesOpen(false); }}
                 title="Link tool — click two cards to connect; click a line to delete"
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow ${
                   linkMode ? 'bg-emerald-600 text-white' : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
@@ -851,11 +872,11 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
               >
                 <Spline size={13} /> {linkMode ? 'Linking…' : 'Link'}
               </button>
-              <button onClick={() => { setFontOpen(o => !o); setWidthOpen(false); setAdding(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow bg-white/90 text-slate-700 border border-slate-200 hover:bg-white">
+              <button onClick={() => { setFontOpen(o => !o); setWidthOpen(false); setLinesOpen(false); setAdding(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow bg-white/90 text-slate-700 border border-slate-200 hover:bg-white">
                 <Type size={13} /> Font
               </button>
               <button
-                onClick={() => { setWidthOpen(o => !o); setFontOpen(false); setAdding(false); setSelectedKey(null); }}
+                onClick={() => { setWidthOpen(o => !o); setFontOpen(false); setLinesOpen(false); setAdding(false); setSelectedKey(null); }}
                 title="Chart width — spread the columns out horizontally"
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow ${
                   width ? 'bg-blue-600 text-white' : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
@@ -863,7 +884,16 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
               >
                 <MoveHorizontal size={13} /> Width
               </button>
-              <button onClick={() => { setAdding(a => !a); setSelectedKey(null); setFontOpen(false); setWidthOpen(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow bg-white/90 text-slate-700 border border-slate-200 hover:bg-white">
+              <button
+                onClick={() => { setLinesOpen(o => !o); setFontOpen(false); setWidthOpen(false); setAdding(false); setSelectedKey(null); }}
+                title="Connector lines — colour, thickness, and style"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow ${
+                  config.connector ? 'bg-blue-600 text-white' : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
+                }`}
+              >
+                <Waypoints size={13} /> Lines
+              </button>
+              <button onClick={() => { setAdding(a => !a); setSelectedKey(null); setFontOpen(false); setWidthOpen(false); setLinesOpen(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow bg-white/90 text-slate-700 border border-slate-200 hover:bg-white">
                 <Plus size={13} /> Add card
               </button>
             </>
@@ -922,6 +952,61 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
             className="w-full flex items-center justify-center gap-1 text-slate-500 hover:text-blue-600 border border-slate-200 rounded-md py-1 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RotateCcw size={11} /> Default width
+          </button>
+        </div>
+      )}
+
+      {/* Connector lines popover */}
+      {editMode && linesOpen && (
+        <div className="absolute top-14 right-3 z-40 bg-white rounded-xl shadow-lg border border-slate-200 p-3 w-64 text-xs text-slate-700" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold text-slate-600">Connector lines</span>
+            <button onClick={() => setLinesOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
+          </div>
+
+          <label className="block text-slate-500 mb-1">Style</label>
+          <div className="grid grid-cols-3 gap-1 mb-3">
+            {(['curved', 'elbow', 'straight'] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => { recordEdit(); dispatch(setCorporateConnector({ style: s })); }}
+                className={`capitalize rounded-md py-1.5 border ${
+                  connStyle === s ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
+          <label className="block text-slate-500 mb-1">Thickness · {connWidth.toFixed(1)}px</label>
+          <input
+            type="range" min={0.8} max={4} step={0.2} value={connWidth}
+            onChange={e => { recordEdit(); dispatch(setCorporateConnector({ width: parseFloat(e.target.value) })); }}
+            className="w-full mb-3"
+          />
+
+          <label className="block text-slate-500 mb-1">Colour</label>
+          <div className="flex items-center gap-2 mb-3">
+            <input
+              type="color" value={connColor}
+              onChange={e => { recordEdit(); dispatch(setCorporateConnector({ color: e.target.value })); }}
+              className="w-8 h-7 rounded border border-slate-200 cursor-pointer"
+            />
+            <div className="flex gap-1">
+              {['#c2cad6', '#94a3b8', '#64748b', '#7c3aed', '#2563eb'].map(c => (
+                <button key={c} onClick={() => { recordEdit(); dispatch(setCorporateConnector({ color: c })); }}
+                  className="w-5 h-5 rounded-full border border-slate-200" style={{ backgroundColor: c }} title={c} />
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={() => { recordEdit(); dispatch(setCorporateConnector({ color: null, width: null, style: null })); }}
+            disabled={!config.connector}
+            className="w-full flex items-center justify-center gap-1 text-slate-500 hover:text-blue-600 border border-slate-200 rounded-md py-1 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCcw size={11} /> Reset lines
           </button>
         </div>
       )}

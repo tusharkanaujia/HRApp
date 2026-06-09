@@ -36,6 +36,13 @@ const corporateChartSlice = createSlice({
       else state.width = action.payload;
       state.updatedAt = new Date().toISOString();
     },
+    // Connector line styling. null on a field clears it back to the default.
+    setCorporateConnector(state, action: PayloadAction<{ color?: string | null; width?: number | null; style?: 'curved' | 'elbow' | 'straight' | null }>) {
+      const conn = { ...(state.connector ?? {}) };
+      applyPatch(conn as Record<string, unknown>, action.payload as Record<string, unknown>);
+      if (Object.keys(conn).length) state.connector = conn; else delete state.connector;
+      state.updatedAt = new Date().toISOString();
+    },
     // Per base-card override (keyed by data-card id). null clears a field.
     setCardOverride(state, action: PayloadAction<{ key: string; patch: Partial<CorporateCardOverride> & Record<string, unknown> }>) {
       const { key, patch } = action.payload;
@@ -98,6 +105,7 @@ export const {
   replaceCorporateChart,
   setCorporateFont,
   setCorporateWidth,
+  setCorporateConnector,
   setCardOverride,
   addCorporateCard,
   updateAddedCard,
