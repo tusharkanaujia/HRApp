@@ -115,7 +115,8 @@ const CSS = `
   position: relative;
   font-family: var(--cff, 'Inter', system-ui, sans-serif);
   background: #eef2f7;
-  width: 100%; height: 100%; overflow: auto;
+  width: 100%; height: 100%;
+  overflow-x: hidden; overflow-y: auto;  /* chart auto-fits width; no horizontal scroll */
   padding: 20px;
 }
 
@@ -141,7 +142,12 @@ const CSS = `
   background: #edf0f5;
   border-radius: 18px;
   box-shadow: 0 18px 50px rgba(15,23,42,.12);
-  max-width: var(--cpw, 1640px);
+  /* Fixed design width (so the A3 layout never reflows/wraps), scaled to fit
+     the viewport via the zoom property. Widening --cpw spreads the columns out;
+     the chart then auto-shrinks to stay fully visible. */
+  width: var(--cpw, 1640px);
+  max-width: none;
+  zoom: var(--czoom, 1);
   margin: 0 auto;
   overflow: hidden;
   position: relative;
@@ -435,11 +441,17 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
   const [linkMode, setLinkMode] = useState(false);
   const [linkSrc, setLinkSrc] = useState<string | null>(null);
   const [tick, setTick] = useState(0); // bump to recompute connector geometry (resize)
+  const [availW, setAvailW] = useState(0); // measured container width, for fit-to-width zoom
 
   const font = config.font ?? {};
   const width = config.width ?? null;          // null = fit (default DEFAULT_PAGE_W)
   const cards = useMemo(() => config.cards ?? {}, [config.cards]);
   const added = useMemo(() => config.added ?? [], [config.added]);
+
+  // Auto fit-to-width: the page renders at its fixed design width and is scaled
+  // down (never up) so the whole chart is always visible — no horizontal scroll.
+  const pageW = width ?? DEFAULT_PAGE_W;
+  const fitZoom = availW > 0 ? Math.min(1, (availW - 44) / pageW) : 1;
 
   // Effective connector set = base (minus removed) + user-added.
   const edges = useMemo(() => {
@@ -477,6 +489,19 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
     const onResize = () => setTick(t => t + 1);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Track the container's width so the chart can scale to fit it (no h-scroll).
+  // A ResizeObserver also catches sidebar collapse / panel changes, not just
+  // window resizes.
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const measure = () => setAvailW(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   // Build one HTML string for an added card so it matches the photo-card style.
@@ -630,6 +655,10 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
     //    follow moved cards. Measured relative to the .page box.
     const page = root.querySelector<HTMLElement>('.page');
     if (page) {
+      // The page is `zoom`-scaled to fit; getBoundingClientRect returns scaled
+      // px, so divide everything by the zoom to work in the page's own (layout)
+      // coordinates. The SVG lives inside .page, so it scales with it visually.
+      const z = fitZoom || 1;
       const pr = page.getBoundingClientRect();
       const cardEl = (key: string) =>
         page.querySelector<HTMLElement>(`.card[data-card="${key}"], .card[data-emp="${key}"]`);
@@ -637,7 +666,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
         const el = cardEl(key);
         if (!el || el.style.display === 'none') return null;
         const r = el.getBoundingClientRect();
-        return { x: r.left - pr.left, y: r.top - pr.top, w: r.width, h: r.height };
+        return { x: (r.left - pr.left) / z, y: (r.top - pr.top) / z, w: r.width / z, h: r.height / z };
       };
       const paths: string[] = [];
       for (const e of edges) {
@@ -660,11 +689,11 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
           paths.push(`<path data-edge="${id}" d="M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}" stroke="#c2cad6" stroke-width="1.4" fill="none" />`);
         }
       }
-      const w = page.scrollWidth, h = page.scrollHeight;
+      const w = pr.width / z, h = pr.height / z;
       page.insertAdjacentHTML('afterbegin',
         `<svg class="corp-edges" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths.join('')}</svg>`);
     }
-  }, [employees, cards, added, selectedKey, edges, font, width, linkSrc, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [employees, cards, added, selectedKey, edges, font, width, fitZoom, linkSrc, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Drag-to-move (edit mode) ──────────────────────────────────────────────
   const dragRef = useRef<{ key: string; el: HTMLElement; startX: number; startY: number; baseDx: number; baseDy: number; moved: boolean } | null>(null);
@@ -680,9 +709,11 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
   const onCorpDragMove = (ev: MouseEvent) => {
     const d = dragRef.current;
     if (!d) return;
-    const ddx = ev.clientX - d.startX;
-    const ddy = ev.clientY - d.startY;
-    if (Math.abs(ddx) > 3 || Math.abs(ddy) > 3) d.moved = true;
+    // Card space is zoom-scaled, so convert screen-px deltas to layout px.
+    const z = fitZoom || 1;
+    const ddx = (ev.clientX - d.startX) / z;
+    const ddy = (ev.clientY - d.startY) / z;
+    if (Math.abs(ev.clientX - d.startX) > 3 || Math.abs(ev.clientY - d.startY) > 3) d.moved = true;
     d.el.style.transform = `translate(${d.baseDx + ddx}px, ${d.baseDy + ddy}px)`;
     d.el.style.zIndex = '50';
   };
@@ -700,8 +731,9 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       return;
     }
     justDraggedRef.current = true;
-    const dx = Math.round(d.baseDx + (ev.clientX - d.startX));
-    const dy = Math.round(d.baseDy + (ev.clientY - d.startY));
+    const z = fitZoom || 1;
+    const dx = Math.round(d.baseDx + (ev.clientX - d.startX) / z);
+    const dy = Math.round(d.baseDy + (ev.clientY - d.startY) / z);
     recordEdit();
     if (added.some(c => c.key === d.key)) dispatch(updateAddedCard({ key: d.key, patch: { dx, dy } }));
     else dispatch(setCardOverride({ key: d.key, patch: { dx, dy } }));
@@ -754,9 +786,18 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
   };
 
   const capture = async (): Promise<HTMLCanvasElement | null> => {
-    const page = wrapperRef.current?.querySelector<HTMLElement>('.page');
-    if (!page) return null;
-    return html2canvas(page, { backgroundColor: '#ffffff', scale: 2, useCORS: true, logging: false });
+    const wrap = wrapperRef.current;
+    const page = wrap?.querySelector<HTMLElement>('.page');
+    if (!wrap || !page) return null;
+    // Export at full size: drop the fit-to-screen zoom for the capture, then restore.
+    const prev = wrap.style.getPropertyValue('--czoom');
+    wrap.style.setProperty('--czoom', '1');
+    try {
+      return await html2canvas(page, { backgroundColor: '#ffffff', scale: 2, useCORS: true, logging: false });
+    } finally {
+      if (prev) wrap.style.setProperty('--czoom', prev);
+      else wrap.style.removeProperty('--czoom');
+    }
   };
 
   useImperativeHandle(ref, () => ({
@@ -804,8 +845,10 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
           ['--cff' as string]: font.family || `'Inter', system-ui, sans-serif`,
           ['--cfs' as string]: font.scale ?? 1,
           ['--ccc' as string]: font.color || 'inherit',
+          // Auto fit-to-width zoom (always applied, so the default page fits too).
+          ['--czoom' as string]: fitZoom,
           // Horizontal expansion: widen the page + each column so cards spread
-          // out; the chart then scrolls horizontally (.corp-org has overflow:auto).
+          // out instead of cramming; the page then auto-scales to fit the screen.
           ...(width ? {
             ['--cpw' as string]: `${width}px`,
             ['--ccw' as string]: `${Math.max(470, Math.floor((width - 120) / 3))}px`,
@@ -897,10 +940,10 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
             <button onClick={() => setWidthOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
           </div>
           <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
-            Widen the chart so the columns spread out instead of cramming. The chart scrolls horizontally when it’s wider than the screen.
+            Spread the columns out so cards stop cramming. The whole chart always scales to fit the screen — no horizontal scroll. Wider = more spread but smaller cards.
           </p>
           <label className="block text-slate-500 mb-1">
-            Width · {width ? `${width}px` : `Fit (${DEFAULT_PAGE_W}px)`}
+            Layout width · {width ? `${width}px` : `Default (${DEFAULT_PAGE_W}px)`}{fitZoom < 1 ? ` · shown at ${Math.round(fitZoom * 100)}%` : ''}
           </label>
           <input
             type="range"
@@ -916,7 +959,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
             disabled={!width}
             className="w-full flex items-center justify-center gap-1 text-slate-500 hover:text-blue-600 border border-slate-200 rounded-md py-1 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <RotateCcw size={11} /> Fit to screen
+            <RotateCcw size={11} /> Default width
           </button>
         </div>
       )}
