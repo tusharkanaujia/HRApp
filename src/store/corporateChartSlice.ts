@@ -30,6 +30,12 @@ const corporateChartSlice = createSlice({
       state.font = font;
       state.updatedAt = new Date().toISOString();
     },
+    // Page width (px) for horizontal expansion. null restores the fit default.
+    setCorporateWidth(state, action: PayloadAction<number | null>) {
+      if (action.payload == null) delete state.width;
+      else state.width = action.payload;
+      state.updatedAt = new Date().toISOString();
+    },
     // Per base-card override (keyed by data-card id). null clears a field.
     setCardOverride(state, action: PayloadAction<{ key: string; patch: Partial<CorporateCardOverride> & Record<string, unknown> }>) {
       const { key, patch } = action.payload;
@@ -91,6 +97,7 @@ export const {
   setCorporateChart,
   replaceCorporateChart,
   setCorporateFont,
+  setCorporateWidth,
   setCardOverride,
   addCorporateCard,
   updateAddedCard,

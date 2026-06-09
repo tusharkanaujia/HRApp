@@ -1,14 +1,14 @@
 import { forwardRef, useImperativeHandle, useRef, useLayoutEffect, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { Pencil, Plus, Trash2, Type, X, RotateCcw, Undo2, Redo2, Spline } from 'lucide-react';
+import { Pencil, Plus, Trash2, Type, X, RotateCcw, Undo2, Redo2, Spline, MoveHorizontal } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import type { RootState } from '../store';
 import { useAuth } from '../hooks/useAuth';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import {
-  setCorporateFont, setCardOverride, addCorporateCard, updateAddedCard, deleteCorporateCard,
+  setCorporateFont, setCorporateWidth, setCardOverride, addCorporateCard, updateAddedCard, deleteCorporateCard,
   addCorporateEdge, removeCorporateEdge, resetCorporateChart, replaceCorporateChart,
 } from '../store/corporateChartSlice';
 import type { CorporateAddedCard, CorporateChartConfig } from '../types';
@@ -22,6 +22,14 @@ const SECTIONS: { id: string; label: string; variant: string; width: number }[] 
   { id: 'ops-pm',    label: 'Ops · Project Managers',  variant: 'cv-pm',   width: 200 },
   { id: 'ops-dh',    label: 'Ops · Dept. Heads',       variant: 'cv-dh',   width: 200 },
 ];
+
+// Horizontal-expansion bounds (px). Default matches the fixed A3 page width;
+// widening lets the three columns spread out instead of cramming/wrapping, with
+// the chart scrolling horizontally.
+const DEFAULT_PAGE_W = 1640;
+const MIN_PAGE_W = 1640;
+const MAX_PAGE_W = 4000;
+const PAGE_W_STEP = 80;
 
 // Base connector set (parent card key → child card key), matching the org.
 // Keys are the cards' data-card / data-emp ids. 'side' edges are the dashed
@@ -133,7 +141,7 @@ const CSS = `
   background: #edf0f5;
   border-radius: 18px;
   box-shadow: 0 18px 50px rgba(15,23,42,.12);
-  max-width: 1640px;
+  max-width: var(--cpw, 1640px);
   margin: 0 auto;
   overflow: hidden;
   position: relative;
@@ -163,7 +171,7 @@ const CSS = `
 .corp-org .content { padding: 4px 30px 6px; position: relative; }
 .corp-org .tier { display: flex; align-items: flex-start; justify-content: center; }
 .corp-org .cols { display: flex; align-items: flex-start; justify-content: center; gap: 26px; margin-top: 36px; }
-.corp-org .col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; max-width: 470px; }
+.corp-org .col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; max-width: var(--ccw, 470px); }
 .corp-org .grid { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: 6px 16px; width: 100%; }
 .corp-org .grp { margin-top: 10px; } /* spacing above a section pill that follows a grid */
 
@@ -422,12 +430,14 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
   const [editMode, setEditMode] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [fontOpen, setFontOpen] = useState(false);
+  const [widthOpen, setWidthOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [linkMode, setLinkMode] = useState(false);
   const [linkSrc, setLinkSrc] = useState<string | null>(null);
   const [tick, setTick] = useState(0); // bump to recompute connector geometry (resize)
 
   const font = config.font ?? {};
+  const width = config.width ?? null;          // null = fit (default DEFAULT_PAGE_W)
   const cards = useMemo(() => config.cards ?? {}, [config.cards]);
   const added = useMemo(() => config.added ?? [], [config.added]);
 
@@ -654,7 +664,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       page.insertAdjacentHTML('afterbegin',
         `<svg class="corp-edges" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${paths.join('')}</svg>`);
     }
-  }, [employees, cards, added, selectedKey, edges, font, linkSrc, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [employees, cards, added, selectedKey, edges, font, width, linkSrc, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Drag-to-move (edit mode) ──────────────────────────────────────────────
   const dragRef = useRef<{ key: string; el: HTMLElement; startX: number; startY: number; baseDx: number; baseDy: number; moved: boolean } | null>(null);
@@ -794,6 +804,12 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
           ['--cff' as string]: font.family || `'Inter', system-ui, sans-serif`,
           ['--cfs' as string]: font.scale ?? 1,
           ['--ccc' as string]: font.color || 'inherit',
+          // Horizontal expansion: widen the page + each column so cards spread
+          // out; the chart then scrolls horizontally (.corp-org has overflow:auto).
+          ...(width ? {
+            ['--cpw' as string]: `${width}px`,
+            ['--ccw' as string]: `${Math.max(470, Math.floor((width - 120) / 3))}px`,
+          } : {}),
         } as React.CSSProperties}
         onClick={onChartClick}
         onMouseDown={onCorpMouseDown}
@@ -806,7 +822,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
       {canEdit && (
         <div className="absolute top-3 right-3 z-40 flex items-center gap-2" onClick={e => e.stopPropagation()}>
           <button
-            onClick={() => { setEditMode(m => !m); setSelectedKey(null); setAdding(false); setFontOpen(false); setLinkMode(false); setLinkSrc(null); }}
+            onClick={() => { setEditMode(m => !m); setSelectedKey(null); setAdding(false); setFontOpen(false); setWidthOpen(false); setLinkMode(false); setLinkSrc(null); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow ${
               editMode ? 'bg-blue-600 text-white' : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
             }`}
@@ -822,7 +838,7 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
                 <Redo2 size={14} />
               </button>
               <button
-                onClick={() => { setLinkMode(m => !m); setLinkSrc(null); setSelectedKey(null); setAdding(false); setFontOpen(false); }}
+                onClick={() => { setLinkMode(m => !m); setLinkSrc(null); setSelectedKey(null); setAdding(false); setFontOpen(false); setWidthOpen(false); }}
                 title="Link tool — click two cards to connect; click a line to delete"
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow ${
                   linkMode ? 'bg-emerald-600 text-white' : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
@@ -830,10 +846,19 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
               >
                 <Spline size={13} /> {linkMode ? 'Linking…' : 'Link'}
               </button>
-              <button onClick={() => { setFontOpen(o => !o); setAdding(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow bg-white/90 text-slate-700 border border-slate-200 hover:bg-white">
+              <button onClick={() => { setFontOpen(o => !o); setWidthOpen(false); setAdding(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow bg-white/90 text-slate-700 border border-slate-200 hover:bg-white">
                 <Type size={13} /> Font
               </button>
-              <button onClick={() => { setAdding(a => !a); setSelectedKey(null); setFontOpen(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow bg-white/90 text-slate-700 border border-slate-200 hover:bg-white">
+              <button
+                onClick={() => { setWidthOpen(o => !o); setFontOpen(false); setAdding(false); setSelectedKey(null); }}
+                title="Chart width — spread the columns out horizontally"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow ${
+                  width ? 'bg-blue-600 text-white' : 'bg-white/90 text-slate-700 border border-slate-200 hover:bg-white'
+                }`}
+              >
+                <MoveHorizontal size={13} /> Width
+              </button>
+              <button onClick={() => { setAdding(a => !a); setSelectedKey(null); setFontOpen(false); setWidthOpen(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow bg-white/90 text-slate-700 border border-slate-200 hover:bg-white">
                 <Plus size={13} /> Add card
               </button>
             </>
@@ -861,6 +886,38 @@ function CorporateOrgChart(_props: object, ref: React.Ref<CorporateOrgChartHandl
             <button onClick={() => { recordEdit(); dispatch(setCorporateFont({ color: null })); }} className="text-slate-500 hover:text-red-500 px-1.5 py-1 rounded hover:bg-slate-100">Default</button>
           </div>
           <button onClick={() => { recordEdit(); dispatch(resetCorporateChart()); }} className="mt-3 w-full flex items-center justify-center gap-1 text-slate-500 hover:text-red-600 border border-slate-200 rounded-md py-1 hover:bg-slate-50"><RotateCcw size={11} /> Reset all chart edits</button>
+        </div>
+      )}
+
+      {/* Width / horizontal-expansion popover */}
+      {editMode && widthOpen && (
+        <div className="absolute top-14 right-3 z-40 bg-white rounded-xl shadow-lg border border-slate-200 p-3 w-64 text-xs text-slate-700" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold text-slate-600">Chart width (global)</span>
+            <button onClick={() => setWidthOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
+          </div>
+          <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
+            Widen the chart so the columns spread out instead of cramming. The chart scrolls horizontally when it’s wider than the screen.
+          </p>
+          <label className="block text-slate-500 mb-1">
+            Width · {width ? `${width}px` : `Fit (${DEFAULT_PAGE_W}px)`}
+          </label>
+          <input
+            type="range"
+            min={MIN_PAGE_W}
+            max={MAX_PAGE_W}
+            step={PAGE_W_STEP}
+            value={width ?? DEFAULT_PAGE_W}
+            onChange={e => { recordEdit(); dispatch(setCorporateWidth(parseInt(e.target.value, 10))); }}
+            className="w-full mb-2"
+          />
+          <button
+            onClick={() => { recordEdit(); dispatch(setCorporateWidth(null)); }}
+            disabled={!width}
+            className="w-full flex items-center justify-center gap-1 text-slate-500 hover:text-blue-600 border border-slate-200 rounded-md py-1 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCcw size={11} /> Fit to screen
+          </button>
         </div>
       )}
 
